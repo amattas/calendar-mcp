@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  calendar-mcp:
+    build: .
+    stdin_open: true
+    tty: true
+    environment:
+      # These can be overridden by creating a .env file
+      - DEBUG=${DEBUG:-false}
+      - ICAL_FEED_CONFIGS=${ICAL_FEED_CONFIGS}
+      - REFRESH_INTERVAL=${REFRESH_INTERVAL:-60}
+      # Redis cache (optional)
+      - REDIS_HOST=${REDIS_HOST:-}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_USE_SSL=${REDIS_USE_SSL:-false}
