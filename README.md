@@ -1,6 +1,6 @@
 # Calendar MCP Server
 
-A specialized Model Context Protocol (MCP) server for iCalendar feed management and event queries. This Docker-based server enables Claude Desktop and other MCP clients to interact with multiple calendar feeds for event tracking, conflict detection, and schedule management.
+A Model Context Protocol (MCP) server for iCalendar feed management and event queries. This server enables Claude Desktop and other MCP clients to interact with multiple calendar feeds for event tracking, conflict detection, and schedule management.
 
 ## Features
 
@@ -11,274 +11,571 @@ A specialized Model Context Protocol (MCP) server for iCalendar feed management 
 - **Automatic Refresh**: Configurable refresh intervals for feed updates
 - **Timezone Support**: Proper timezone normalization and handling
 - **Redis Caching**: Optional caching for improved performance
-- **Docker Support**: Easy deployment with Docker and Docker Compose
-
-## Prerequisites
-
-- **Docker** and **Docker Compose** (for containerized deployment)
-- **iCalendar Feed URLs**: Public .ics URLs from Google Calendar, Outlook, Apple Calendar, etc.
-- **Claude Desktop** (optional): For MCP client integration
+- **Multiple Deployment Modes**: stdio (Claude Desktop), HTTP (remote), and Kubernetes
 
 ## Quick Start
 
-### 1. Get Your Calendar Feed URLs
+### Local Development (stdio mode)
 
-**Google Calendar:**
-1. Open Google Calendar settings
-2. Select the calendar you want to share
-3. Scroll to "Integrate calendar"
-4. Copy the "Secret address in iCal format" URL
-
-**Outlook Calendar:**
-1. Go to Calendar settings
-2. Select "Shared calendars"
-3. Choose "Publish a calendar"
-4. Copy the ICS link
-
-**Apple Calendar:**
-1. Right-click the calendar in the sidebar
-2. Select "Share Calendar"
-3. Make it public and copy the webcal:// URL (change to https://)
-
-### 2. Clone and Configure
+Perfect for Claude Desktop integration:
 
 ```bash
-cd calendar-mcp
+# 1. Clone and configure
 cp .env.example .env.local
+# Edit .env.local with your calendar feeds
+
+# 2. Run with Docker Compose
+docker-compose up --build
+
+# 3. Configure Claude Desktop
+# Add to ~/Library/Application Support/Claude/claude_desktop_config.json (macOS)
+# or %APPDATA%\Claude\claude_desktop_config.json (Windows)
 ```
 
-Edit `.env.local` and add your calendar feeds:
+See [claude_desktop_config.json.example](claude_desktop_config.json.example) for configuration details.
 
-```env
-# Calendar feeds in JSON format
-ICAL_FEED_CONFIGS=[{"name":"Work","url":"https://calendar.google.com/calendar/ical/.../basic.ics"},{"name":"Personal","url":"https://outlook.office365.com/owa/calendar/.../calendar.ics"}]
+### HTTP Server Mode
 
-# Refresh interval in minutes
-REFRESH_INTERVAL=60
-
-# Debug mode
-DEBUG=false
-
-# Optional Redis caching
-REDIS_HOST=
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_USE_SSL=false
-```
-
-### 3. Run with Docker Compose
+For remote access and testing before Kubernetes deployment:
 
 ```bash
-docker-compose up --build
+# 1. Configure environment
+cp .env.example .env.local
+# Edit .env.local: set ICAL_FEED_CONFIGS and MCP_API_KEY
+
+# 2. Run with Docker Compose
+docker-compose -f docker-compose.http.yml up --build
+
+# 3. Calculate your endpoint URLs
+python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-https
+
+# 4. Access endpoints
+# Health: http://localhost:8080/{API_KEY}/{MD5_HASH}/health/
+# MCP: http://localhost:8080/{API_KEY}/{MD5_HASH}/mcp
 ```
 
-The server will start in stdio mode, ready to accept MCP connections.
+### Kubernetes Deployment
 
-### 4. Connect to Claude Desktop
+Production deployment with ingress controller:
 
-Add this configuration to your Claude Desktop config file:
+```bash
+# 1. Build and push image
+docker build -f Dockerfile.http -t your-registry/calendar-mcp:latest .
+docker push your-registry/calendar-mcp:latest
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+# 2. Configure secrets
+cp .env.k8s.example .env.k8s
+# Edit .env.k8s with your credentials
+kubectl create secret generic calendar-mcp-secrets --from-env-file=.env.k8s
 
-```json
-{
-  "mcpServers": {
-    "calendar": {
-      "command": "docker",
-      "args": ["compose", "-f", "/path/to/calendar-mcp/docker-compose.yml", "run", "--rm", "calendar-mcp"]
-    }
-  }
-}
+# 3. Update deployment manifest
+# Edit k8s-deployment.yaml: update image and ingress host
+
+# 4. Deploy
+kubectl apply -f k8s-deployment.yaml
+
+# 5. Calculate endpoint URLs
+export MCP_API_KEY=$(kubectl get secret calendar-mcp-secrets -o jsonpath='{.data.MCP_API_KEY}' | base64 -d)
+python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain your-domain.com
 ```
 
-Restart Claude Desktop to activate the server.
+See [Kubernetes Deployment](#kubernetes-deployment) section for complete guide.
 
 ## Configuration
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ICAL_FEED_CONFIGS` | Yes | - | JSON array of calendar feeds with name and URL |
-| `REFRESH_INTERVAL` | No | `60` | Feed refresh interval in minutes |
-| `DEBUG` | No | `false` | Enable debug logging |
-| `REDIS_HOST` | No | - | Redis server hostname (for caching) |
-| `REDIS_PORT` | No | `6379` | Redis server port |
-| `REDIS_PASSWORD` | No | - | Redis password |
-| `REDIS_USE_SSL` | No | `false` | Use SSL for Redis connection |
+**Required:**
+- `ICAL_FEED_CONFIGS` - JSON array of calendar feeds
+
+**Optional:**
+- `TIMEZONE` - IANA timezone name (default: `UTC`)
+- `REFRESH_INTERVAL` - Minutes between refreshes (default: `60`)
+- `DEBUG` - Enable debug logging (default: `false`)
+
+**HTTP/Kubernetes Mode:**
+- `MCP_API_KEY` - API key for authentication (strongly recommended)
+- `HOST` - Bind address (default: `0.0.0.0`)
+- `PORT` - Listen port (default: `8080`)
+
+**Redis Cache (Optional):**
+- `REDIS_HOST` - Redis hostname
+- `REDIS_SSL_PORT` - Redis SSL port (default: `6380`)
+- `REDIS_KEY` - Redis access key
 
 ### Calendar Feed Format
-
-The `ICAL_FEED_CONFIGS` should be a JSON array of objects:
 
 ```json
 [
   {
-    "name": "Work Calendar",
-    "url": "https://calendar.google.com/calendar/ical/.../basic.ics"
+    "name": "Work",
+    "url": "https://calendar.google.com/calendar/ical/YOUR_ID/basic.ics"
   },
   {
     "name": "Personal",
-    "url": "https://outlook.office365.com/owa/calendar/.../calendar.ics"
+    "url": "https://outlook.office365.com/owa/calendar/YOUR_ID/calendar.ics"
   }
 ]
 ```
 
-## Available MCP Tools
+### Getting Calendar Feed URLs
 
-The Calendar MCP server provides the following tools:
+**Google Calendar:**
+1. Open Google Calendar settings
+2. Select the calendar → "Integrate calendar"
+3. Copy "Secret address in iCal format"
+
+**Outlook Calendar:**
+1. Calendar settings → "Shared calendars"
+2. Publish a calendar
+3. Copy the ICS link
+
+**Apple Calendar:**
+1. Right-click calendar → "Share Calendar"
+2. Make public and copy URL (change `webcal://` to `https://`)
+
+## Deployment Modes
+
+### 1. stdio Mode (Claude Desktop)
+
+```bash
+docker-compose up --build
+```
+
+**Use case:** Local Claude Desktop integration
+**Entry point:** `server.py`
+**Communication:** stdin/stdout
+
+### 2. HTTP Server Mode
+
+```bash
+docker-compose -f docker-compose.http.yml up --build
+```
+
+**Use case:** Remote HTTP access, testing
+**Entry point:** `server_remote.py`
+**Port:** 8080
+**Authentication:** Dual-factor path (API key + MD5 hash)
+
+### 3. Kubernetes Mode
+
+```bash
+kubectl apply -f k8s-deployment.yaml
+```
+
+**Use case:** Production deployment
+**Image:** `Dockerfile.http`
+**Port:** 8080
+**Features:** Replicas, health checks, ingress, autoscaling
+
+## Authentication (HTTP/Kubernetes Mode)
+
+The server uses **dual-factor path authentication** requiring both the API key and its MD5 hash:
+
+```
+https://your-domain.com/{API_KEY}/{MD5_HASH}/endpoint
+```
+
+### Generating Endpoint URLs
+
+**Python script (recommended):**
+```bash
+python scripts/verify_auth.py --api-key YOUR_KEY --domain your-domain.com
+```
+
+**Bash script:**
+```bash
+scripts/get_mcp_url.sh YOUR_KEY your-domain.com
+```
+
+**Manual calculation:**
+```python
+import hashlib
+api_key = "your-api-key"
+api_key_hash = hashlib.md5(api_key.encode()).hexdigest()
+print(f"https://domain.com/{api_key}/{api_key_hash}/mcp")
+```
+
+### Available Endpoints
+
+- **Root** (`/`): Server info (public, no auth)
+- **Health** (`/{KEY}/{HASH}/health/`): Health check
+- **Info** (`/{KEY}/{HASH}/info/`): Available tools and services
+- **MCP** (`/{KEY}/{HASH}/mcp`): MCP protocol endpoint
+
+### Security Benefits
+
+1. **Two-Factor Protection**: Requires both API key and hash
+2. **Hash Not Stored**: MD5 hash calculated at runtime
+3. **Path Obfuscation**: Even with one factor, endpoint is inaccessible
+4. **No Token Exchange**: Stateless authentication
+
+## Kubernetes Deployment
+
+### Prerequisites
+
+- Kubernetes cluster running
+- `kubectl` configured
+- Container registry access
+- Ingress controller installed (nginx, traefik, etc.)
+
+### Step-by-Step Deployment
+
+**1. Generate Strong API Key:**
+```bash
+openssl rand -base64 32
+```
+
+**2. Create Kubernetes Secret:**
+```bash
+cp .env.k8s.example .env.k8s
+# Edit .env.k8s with your configuration
+
+kubectl create secret generic calendar-mcp-secrets \
+  --from-env-file=.env.k8s \
+  --namespace=default
+```
+
+**3. Update Deployment Manifest:**
+
+Edit `k8s-deployment.yaml`:
+- Update `image:` with your registry URL
+- Update `host:` in ingress with your domain
+
+**4. Deploy:**
+```bash
+kubectl apply -f k8s-deployment.yaml
+```
+
+**5. Verify:**
+```bash
+# Check pods
+kubectl get pods -l app=calendar-mcp
+
+# Check ingress
+kubectl get ingress calendar-mcp
+
+# View logs
+kubectl logs -l app=calendar-mcp --tail=50 -f
+```
+
+**6. Get Endpoint URLs:**
+```bash
+export MCP_API_KEY=$(kubectl get secret calendar-mcp-secrets \
+  -o jsonpath='{.data.MCP_API_KEY}' | base64 -d)
+
+python scripts/verify_auth.py \
+  --api-key "$MCP_API_KEY" \
+  --domain your-domain.com
+```
+
+### SSL/TLS Configuration
+
+**Using cert-manager (recommended):**
+
+```bash
+# Install cert-manager
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# Create ClusterIssuer
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: your-email@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+
+# Uncomment TLS section in k8s-deployment.yaml
+```
+
+### Scaling
+
+**Manual:**
+```bash
+kubectl scale deployment calendar-mcp --replicas=5
+```
+
+**Auto-scaling:**
+```bash
+kubectl autoscale deployment calendar-mcp \
+  --min=2 --max=10 --cpu-percent=70
+```
+
+### Monitoring
+
+```bash
+# Logs
+kubectl logs -l app=calendar-mcp --tail=100 -f
+
+# Resource usage
+kubectl top pods -l app=calendar-mcp
+
+# Events
+kubectl get events --sort-by='.lastTimestamp'
+```
+
+### Troubleshooting
+
+**Pods not starting:**
+```bash
+kubectl describe pod calendar-mcp-xxxxxxxxx-xxxxx
+kubectl get events --sort-by='.lastTimestamp'
+```
+
+**Connection issues:**
+```bash
+# Port forward to test directly
+kubectl port-forward svc/calendar-mcp 8080:8080
+curl http://localhost:8080/
+```
+
+**Configuration issues:**
+```bash
+# Check ConfigMap and Secret
+kubectl get configmap calendar-mcp-config -o yaml
+kubectl get secret calendar-mcp-secrets -o yaml
+
+# Update and restart
+kubectl edit configmap calendar-mcp-config
+kubectl rollout restart deployment calendar-mcp
+```
+
+## Available MCP Tools
 
 ### Event Queries
 - `get_events_today` - Get all events for today
+- `get_tomorrow_events` - Get tomorrow's events
+- `get_week_events` - Get this week's events
+- `get_month_events` - Get this month's events
 - `get_upcoming_events` - Get upcoming events (next 7 days)
-- `get_events_by_date` - Get events for a specific date
-- `get_events_by_range` - Get events within a date range
-- `search_events` - Search events by keyword
+- `get_events_on_date` - Get events for a specific date
+- `get_events_between_dates` - Get events within a date range
+- `get_events_after_date` - Get events after a specific date
+- `search_calendar_events` - Search events by keyword
 
 ### Conflict Detection
-- `analyze_conflicts` - Detect scheduling conflicts across calendars
-- `get_conflicts_for_date` - Get conflicts for a specific date
-- `get_conflicts_by_range` - Get conflicts within a date range
+- `get_calendar_conflicts` - Detect scheduling conflicts across calendars
 
 ### Feed Management
 - `add_calendar_feed` - Add a new calendar feed
 - `remove_calendar_feed` - Remove a calendar feed
-- `refresh_calendars` - Manually refresh all calendar feeds
+- `refresh_calendar_feeds` - Manually refresh all feeds
 - `get_calendar_info` - Get information about configured feeds
+- `get_calendar_feeds` - List all configured feeds
 
 ### Server Management
+- `get_current_datetime` - Get current date/time in configured timezone
 - `get_server_status` - Check server health
 - `get_server_config` - View server configuration
+
+### Cache Management (if Redis configured)
 - `get_cache_stats` - View cache performance metrics
-- `clear_cache` - Clear cached data
 - `get_cache_info` - View Redis server information
+- `clear_cache` - Clear cached data
+- `reset_cache_stats` - Reset cache statistics
 
-## Local Development
+## Security
 
-### Without Docker
+### Best Practices
 
-1. Create a virtual environment:
+**1. Generate Strong API Keys:**
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+openssl rand -base64 32  # Minimum 32 bytes recommended
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+**2. Use HTTPS in Production:**
+- Configure TLS/SSL certificates
+- Enable SSL redirect in ingress
+- Use cert-manager for automatic renewal
+
+**3. Secure Storage:**
+- ✅ Store in Kubernetes Secrets
+- ✅ Use external secret management (Vault, AWS Secrets Manager)
+- ✅ Encrypt secrets at rest
+- ❌ Never commit to version control
+- ❌ Never log API keys
+
+**4. Network Security:**
+```yaml
+# Network Policy example
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: calendar-mcp-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: calendar-mcp
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
 ```
 
-3. Set environment variables:
-```bash
-export ICAL_FEED_CONFIGS='[{"name":"Work","url":"https://..."}]'
+**5. Rate Limiting:**
+```yaml
+# Ingress annotation
+nginx.ingress.kubernetes.io/limit-rps: "10"
 ```
 
-4. Run the server:
+### Security Headers
+
+The server automatically adds security headers:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: no-referrer`
+- `Cache-Control: no-store, no-cache, must-revalidate, private`
+
+Access logs are disabled to prevent API key leakage.
+
+### Key Rotation
+
+If API key is compromised:
+
 ```bash
-python server.py
+# 1. Generate new key
+NEW_KEY=$(openssl rand -base64 32)
+
+# 2. Update secret
+kubectl create secret generic calendar-mcp-secrets \
+  --from-literal=MCP_API_KEY="$NEW_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. Restart pods
+kubectl rollout restart deployment calendar-mcp
+
+# 4. Get new endpoint URLs
+python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
+
+# 5. Update MCP clients with new URLs
 ```
 
-### With Docker
+## Production Checklist
 
-Build and run:
-```bash
-docker build -t calendar-mcp .
-docker run -e ICAL_FEED_CONFIGS='[...]' calendar-mcp
-```
+- [ ] Strong MCP_API_KEY generated (32+ bytes)
+- [ ] HTTPS/TLS configured
+- [ ] SSL redirect enabled
+- [ ] Certificate auto-renewal configured
+- [ ] Network policies applied
+- [ ] Rate limiting configured
+- [ ] Secrets encrypted at rest
+- [ ] RBAC configured for secret access
+- [ ] Monitoring and alerting configured
+- [ ] Key rotation schedule established
+- [ ] Backup and recovery tested
+- [ ] Security scanning enabled
+- [ ] Pod Security Standards enforced
 
 ## Testing
 
-### Test Server Status
-
-You can test the server by connecting via Claude Desktop and asking:
+### Test with Claude Desktop
 
 > "What's the status of my calendar server?"
-
-### Test Event Queries
-
 > "What events do I have today?"
 > "Show me my schedule for next week"
 > "Do I have any scheduling conflicts this month?"
 
-### Test Feed Management
+### Test HTTP Endpoints
 
-> "Add my personal calendar: https://calendar.google.com/..."
-> "Refresh all my calendars"
+```bash
+# Calculate endpoint URLs
+python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain localhost:8080 --no-https
+
+# Test health check
+curl http://localhost:8080/$API_KEY/$API_HASH/health/
+
+# Test server info
+curl http://localhost:8080/$API_KEY/$API_HASH/info/
+```
 
 ## Troubleshooting
 
 ### "No iCalendar feeds configured"
-
-**Solution**: Ensure `ICAL_FEED_CONFIGS` is set correctly in your `.env.local` file with valid JSON.
+Ensure `ICAL_FEED_CONFIGS` is set correctly with valid JSON.
 
 ### Feed Not Updating
-
-**Solution**:
-- Check the feed URL is publicly accessible
-- Verify the URL returns valid iCalendar data (ends in .ics)
-- Try refreshing manually with `refresh_calendars` tool
-- Check the `REFRESH_INTERVAL` setting
+- Check feed URL is publicly accessible
+- Verify URL returns valid iCalendar data
+- Try manual refresh: `refresh_calendar_feeds` tool
+- Check `REFRESH_INTERVAL` setting
 
 ### Timezone Issues
-
-**Solution**:
-- Ensure your calendar feeds include proper timezone information
-- The server automatically normalizes timezones to UTC
-- Check event times include TZID parameters
+- Ensure calendar feeds include timezone information
+- Server normalizes timezones to UTC
+- Set `TIMEZONE` environment variable
 
 ### JSON Parse Error
+- Validate JSON format in `ICAL_FEED_CONFIGS`
+- Use single quotes around JSON in environment variables
+- Escape double quotes properly
 
-**Solution**:
-- Validate your JSON format in `ICAL_FEED_CONFIGS`
-- Use single quotes around the JSON in environment variables
-- Escape double quotes properly if needed
+### 502 Bad Gateway (Kubernetes)
+```bash
+# Check pods are ready
+kubectl get pods -l app=calendar-mcp
+
+# Check logs for errors
+kubectl logs -l app=calendar-mcp --tail=50
+
+# Common causes:
+# - Missing ICAL_FEED_CONFIGS
+# - Invalid JSON in ICAL_FEED_CONFIGS
+# - Missing MCP_API_KEY
+```
 
 ## Architecture
 
-The Calendar MCP server follows this architecture:
-
 ```
-Claude Desktop
-     ↓ (stdio)
+Claude Desktop / MCP Client
+     ↓ (stdio or HTTP)
 Docker Container
      ↓
 MCP Server (FastMCP)
-     ↓
-Calendar Service
+     ├─ server.py (stdio mode)
+     └─ server_remote.py (HTTP mode)
+          ↓
+Calendar Service (services/ical.py)
      ├─ Feed Parser (icalendar)
      ├─ Recurring Events (recurring-ical-events)
      └─ Auto-Refresh Timer
-     ↓
+          ↓
+     Optional Redis Cache (services/cache.py)
+          ↓
 iCalendar Feed URLs
 ```
 
-Optional Redis caching layer improves performance by reducing feed parsing.
-
-## Conflict Detection
-
-The server includes intelligent conflict detection that:
-
-- Compares events across all calendars
-- Identifies overlapping time periods
-- Calculates conflict severity (minor, moderate, major)
-- Reduces false positives by 70% through smart filtering
-- Normalizes timezones for accurate comparison
-
-## Security Notes
-
-- Never commit your `.env.local` file to version control
-- Use environment-specific `.env` files
-- Calendar feed URLs may contain authentication tokens
-- Consider using private/secret calendar URLs
-- Feed URLs are never exposed through MCP tool responses
-
 ## Performance
 
-- **Automatic Caching**: Parsed events are cached to reduce processing
-- **Background Refresh**: Feeds refresh automatically without blocking
-- **Redis Support**: Optional Redis caching for multi-instance deployments
-- **Efficient Parsing**: Only parses feeds when they've changed
+- **Automatic Caching**: Parsed events cached to reduce processing
+- **Background Refresh**: Feeds refresh without blocking
+- **Redis Support**: Optional Redis for multi-instance deployments
+- **Efficient Parsing**: Only parses when feeds change
+
+## Development
+
+See [AGENTS.md](AGENTS.md) for detailed development documentation including:
+- Architecture details
+- Service patterns
+- Testing guide
+- Adding new features
+- Common gotchas
 
 ## License
 
@@ -286,4 +583,6 @@ This project is provided as-is for personal use.
 
 ## Support
 
-For iCalendar specification, visit: https://icalendar.org/
+- **Issues**: Open a GitHub issue
+- **Security**: Report vulnerabilities privately
+- **iCalendar Spec**: https://icalendar.org/

@@ -10,6 +10,8 @@ import logging
 from typing import Optional, Dict, Any
 from dotenv import dotenv_values
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
 
@@ -185,6 +187,57 @@ def get_cache_service() -> Optional[RedisCache]:
 
 
 # Register additional server-level tools
+@mcp.tool(
+    name="get_current_datetime",
+    description="""Get the current date and time in the configured timezone.
+
+## Returns
+• Current date (YYYY-MM-DD format)
+• Current time (HH:MM:SS format)
+• Current datetime (ISO 8601 format)
+• Configured timezone name
+• UTC offset
+
+## Use Cases
+• Reference current date/time for calendar queries
+• Understand timezone context for events
+• Schedule relative to current time
+
+## Related Tools
+• Use `get_events_today` for today's calendar events
+• Use `get_upcoming_events` for future events
+
+⚠️ **Note**: The timezone is configured via the TIMEZONE environment variable (default: UTC)""",
+    title="Current Date & Time",
+    annotations={"title": "Current Date & Time"}
+)
+def get_current_datetime() -> Dict[str, Any]:
+    """Get the current date and time in the configured timezone"""
+    # Get timezone from environment variable, default to UTC
+    timezone_str = os.getenv('TIMEZONE', 'UTC')
+
+    try:
+        tz = ZoneInfo(timezone_str)
+    except Exception as e:
+        logger.warning(f"Invalid timezone '{timezone_str}': {e}. Falling back to UTC.")
+        tz = ZoneInfo('UTC')
+        timezone_str = 'UTC'
+
+    # Get current datetime in the configured timezone
+    now = datetime.now(tz)
+
+    return {
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "datetime": now.isoformat(),
+        "timezone": timezone_str,
+        "utc_offset": now.strftime("%z"),
+        "timezone_abbr": now.strftime("%Z"),
+        "day_of_week": now.strftime("%A"),
+        "timestamp": int(now.timestamp())
+    }
+
+
 @mcp.tool(
     name="get_server_status",
     description="""Get the current status of the calendar service.
