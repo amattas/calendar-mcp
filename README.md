@@ -31,8 +31,8 @@ docker-compose up --build
 python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-https
 
 # 4. Access endpoints
-# Health (public): http://localhost:8080/health
-# MCP: http://localhost:8080/app/{API_KEY}/{MD5_HASH}/mcp
+# Health (public): http://localhost:8080/app/health
+# MCP: http://localhost:8080/app/{API_KEY}/{API_KEY_HASH}/mcp
 ```
 
 ## Configuration
@@ -49,6 +49,7 @@ python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-ht
 
 **HTTP Mode:**
 - `MCP_API_KEY` - API key for authentication (strongly recommended)
+- `MD5_SALT` - Salt for MD5 hash (optional, recommended for enhanced security)
 - `HOST` - Bind address (default: `0.0.0.0`)
 - `PORT` - Listen port (default: `80`)
 
@@ -105,8 +106,10 @@ docker-compose up --build
 The server uses **dual-factor path authentication** requiring both the API key and its MD5 hash:
 
 ```
-https://your-domain.com/app/{API_KEY}/{MD5_HASH}/mcp
+https://your-domain.com/app/{API_KEY}/{API_KEY_HASH}/mcp
 ```
+
+The hash is calculated as `MD5(MD5_SALT + API_KEY)` when salt is configured, or `MD5(API_KEY)` in legacy mode.
 
 ### Generating Endpoint URLs
 
@@ -124,9 +127,26 @@ scripts/get_mcp_url.sh YOUR_KEY your-domain.com
 ```python
 import hashlib
 api_key = "your-api-key"
-api_key_hash = hashlib.md5(api_key.encode()).hexdigest()
+md5_salt = "your-salt"  # Optional
+hash_input = f"{md5_salt}{api_key}" if md5_salt else api_key
+api_key_hash = hashlib.md5(hash_input.encode()).hexdigest()
 print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 ```
+
+### Security Features
+
+**Anti-Brute-Force Protection:**
+- Invalid authentication paths trigger a 30-second delay before returning 404
+- This makes brute-force attacks impractical (e.g., testing 1000 keys would take 8+ hours)
+- Health check endpoint (`/app/health`) is exempt from delays
+- Failed attempts are logged with source IP for monitoring
+
+**Best Practices:**
+- Use strong API keys (32+ bytes, generated with `openssl rand -base64 32`)
+- Configure `MD5_SALT` for additional security layer
+- Monitor logs for repeated failed authentication attempts
+- Consider IP-based rate limiting at your reverse proxy
+- Always use HTTPS in production to prevent credential interception
 
 ### Available Endpoints
 
@@ -220,18 +240,20 @@ Access logs are disabled to prevent API key leakage.
 If API key is compromised:
 
 ```bash
-# 1. Generate new key
+# 1. Generate new key and salt
 NEW_KEY=$(openssl rand -base64 32)
+NEW_SALT=$(openssl rand -base64 32)
 
 # 2. Update .env.local file
 echo "MCP_API_KEY=$NEW_KEY" >> .env.local
+echo "MD5_SALT=$NEW_SALT" >> .env.local
 
 # 3. Restart the Docker container
 docker-compose down
 docker-compose up -d
 
 # 4. Get new endpoint URLs
-python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
+python scripts/verify_auth.py --api-key "$NEW_KEY" --md5-salt "$NEW_SALT" --domain your-domain.com
 
 # 5. Update MCP clients with new URLs
 ```
@@ -239,6 +261,7 @@ python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
 ## Production Checklist
 
 - [ ] Strong MCP_API_KEY generated (32+ bytes)
+- [ ] MD5_SALT configured for enhanced security
 - [ ] HTTPS/TLS configured with valid certificates
 - [ ] SSL redirect enabled at reverse proxy
 - [ ] Certificate auto-renewal configured
@@ -263,11 +286,16 @@ python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
 ### Test HTTP Endpoints
 
 ```bash
-# Calculate endpoint URLs
-python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain localhost:8080 --no-https
+# Calculate endpoint URLs (with salt for enhanced security)
+python scripts/verify_auth.py --api-key "$MCP_API_KEY" --md5-salt "$MD5_SALT" --domain localhost:8080 --no-https
+
+# Or using environment variables
+export MCP_API_KEY="your-api-key"
+export MD5_SALT="your-salt"
+python scripts/verify_auth.py --domain localhost:8080 --no-https
 
 # Test health check (public endpoint)
-curl http://localhost:8080/health
+curl http://localhost:8080/app/health
 ```
 
 ## Troubleshooting

@@ -110,11 +110,17 @@ All tests avoid real HTTP requests or live API tokens.
 ### Authentication (server_remote.py)
 
 When `MCP_API_KEY` is set:
-- **Dual-factor path**: `/{api_key}/{md5_hash}/endpoint`
-- MD5 hash: `hashlib.md5(api_key.encode()).hexdigest()`
-- Endpoints:
-  - MCP: `/{key}/{hash}/mcp` (authenticated)
-  - Health: `/health` (public, no auth)
+- **Dual-factor path**: `/app/{api_key}/{api_key_hash}/endpoint`
+- **MD5 hash calculation**:
+  - With salt: `hashlib.md5(f"{MD5_SALT}{api_key}".encode()).hexdigest()`
+  - Without salt (legacy): `hashlib.md5(api_key.encode()).hexdigest()`
+- **Endpoints**:
+  - MCP: `/app/{key}/{hash}/mcp` (authenticated)
+  - Health: `/app/health` (public, no auth)
+- **Anti-brute-force protection**:
+  - Invalid auth paths trigger 30-second delay before 404
+  - Failed attempts logged with source IP
+  - Health check exempt from delays
 - Use `scripts/verify_auth.py` to calculate correct URLs
 - Security headers added automatically
 - Access logs disabled to prevent key leakage
@@ -233,10 +239,13 @@ DEBUG=true
 ## Security Notes
 
 1. **API Keys**: Never log full keys (truncate to 8 chars)
-2. **Feed URLs**: May contain auth tokens, never expose
-3. **Access Logs**: Disabled in HTTP mode
-4. **Input Validation**: Validate all user inputs
-5. **Error Messages**: Don't expose internal paths
+2. **MD5 Salt**: `MD5_SALT` environment variable adds extra security layer to hash
+3. **Feed URLs**: May contain auth tokens, never expose
+4. **Access Logs**: Disabled in HTTP mode to prevent key leakage
+5. **Anti-Brute-Force**: 30-second delay on failed auth attempts (server_remote.py:157-162)
+6. **Input Validation**: Validate all user inputs
+7. **Error Messages**: Don't expose internal paths
+8. **Rate Limiting**: Consider IP-based limiting at reverse proxy level
 
 ## Debugging Tips
 
