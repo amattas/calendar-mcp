@@ -11,32 +11,13 @@ A Model Context Protocol (MCP) server for iCalendar feed management and event qu
 - **Automatic Refresh**: Configurable refresh intervals for feed updates
 - **Timezone Support**: Proper timezone normalization and handling
 - **Redis Caching**: Optional caching for improved performance
-- **Multiple Deployment Modes**: stdio (Claude Desktop) and HTTP (remote)
+- **HTTP API**: Remote access via HTTP with dual-factor authentication
 
 ## Quick Start
 
-### Local Development (stdio mode)
+### Docker Deployment
 
-Perfect for Claude Desktop integration:
-
-```bash
-# 1. Clone and configure
-cp .env.example .env.local
-# Edit .env.local with your calendar feeds
-
-# 2. Run with Docker Compose
-docker-compose up --build
-
-# 3. Configure Claude Desktop
-# Add to ~/Library/Application Support/Claude/claude_desktop_config.json (macOS)
-# or %APPDATA%\Claude\claude_desktop_config.json (Windows)
-```
-
-See [claude_desktop_config.json.example](claude_desktop_config.json.example) for configuration details.
-
-### HTTP Server Mode
-
-For remote access:
+For production HTTP access:
 
 ```bash
 # 1. Configure environment
@@ -44,7 +25,7 @@ cp .env.example .env.local
 # Edit .env.local: set ICAL_FEED_CONFIGS and MCP_API_KEY
 
 # 2. Run with Docker Compose
-docker-compose -f docker-compose.http.yml up --build
+docker-compose up --build
 
 # 3. Calculate your endpoint URLs
 python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:80 --no-https
@@ -107,30 +88,19 @@ python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:80 --no-http
 1. Right-click calendar → "Share Calendar"
 2. Make public and copy URL (change `webcal://` to `https://`)
 
-## Deployment Modes
+## Deployment
 
-### 1. stdio Mode (Claude Desktop)
+### Docker with HTTP API
 
 ```bash
 docker-compose up --build
 ```
 
-**Use case:** Local Claude Desktop integration
-**Entry point:** `server.py`
-**Communication:** stdin/stdout
-
-### 2. HTTP Server Mode
-
-```bash
-docker-compose -f docker-compose.http.yml up --build
-```
-
-**Use case:** Remote HTTP access, production deployment
 **Entry point:** `server_remote.py`
 **Port:** 80
 **Authentication:** Dual-factor path (API key + MD5 hash)
 
-## Authentication (HTTP Mode)
+## Authentication
 
 The server uses **dual-factor path authentication** requiring both the API key and its MD5 hash:
 
@@ -257,8 +227,8 @@ NEW_KEY=$(openssl rand -base64 32)
 echo "MCP_API_KEY=$NEW_KEY" >> .env.local
 
 # 3. Restart the Docker container
-docker-compose -f docker-compose.http.yml down
-docker-compose -f docker-compose.http.yml up -d
+docker-compose down
+docker-compose up -d
 
 # 4. Get new endpoint URLs
 python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
@@ -335,13 +305,12 @@ docker logs calendar-mcp
 ## Architecture
 
 ```
-Claude Desktop / MCP Client
-     ↓ (stdio or HTTP)
+MCP Client
+     ↓ (HTTP)
 Docker Container
      ↓
 MCP Server (FastMCP)
-     ├─ server.py (stdio mode)
-     └─ server_remote.py (HTTP mode)
+     └─ server_remote.py (HTTP API)
           ↓
 Calendar Service (services/ical.py)
      ├─ Feed Parser (icalendar)
