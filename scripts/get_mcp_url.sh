@@ -42,7 +42,7 @@ echo -e "${BLUE}API Key Hash:${NC}    $API_KEY_HASH"
 echo -e "${BLUE}Domain:${NC}          $DOMAIN"
 echo ""
 echo -e "${GREEN}Endpoints:${NC}"
-echo -e "  ${BLUE}MCP (authenticated):${NC}  https://$DOMAIN/mcp/$API_KEY/$API_KEY_HASH"
+echo -e "  ${BLUE}MCP (authenticated):${NC}  https://$DOMAIN/app/$API_KEY/$API_KEY_HASH/mcp"
 echo -e "  ${BLUE}Health (public):${NC}      https://$DOMAIN/health"
 echo ""
 echo -e "${YELLOW}Note:${NC} Keep the MCP URL confidential. It contains authentication credentials."
@@ -50,13 +50,13 @@ echo ""
 
 # Option to copy to clipboard (if available)
 if command -v pbcopy &> /dev/null; then
-    echo "https://$DOMAIN/mcp/$API_KEY/$API_KEY_HASH" | pbcopy
+    echo "https://$DOMAIN/app/$API_KEY/$API_KEY_HASH/mcp" | pbcopy
     echo -e "${GREEN}✓${NC} MCP endpoint URL copied to clipboard (macOS)"
 elif command -v xclip &> /dev/null; then
-    echo "https://$DOMAIN/mcp/$API_KEY/$API_KEY_HASH" | xclip -selection clipboard
+    echo "https://$DOMAIN/app/$API_KEY/$API_KEY_HASH/mcp" | xclip -selection clipboard
     echo -e "${GREEN}✓${NC} MCP endpoint URL copied to clipboard (Linux)"
 elif command -v clip.exe &> /dev/null; then
-    echo "https://$DOMAIN/mcp/$API_KEY/$API_KEY_HASH" | clip.exe
+    echo "https://$DOMAIN/app/$API_KEY/$API_KEY_HASH/mcp" | clip.exe
     echo -e "${GREEN}✓${NC} MCP endpoint URL copied to clipboard (Windows)"
 fi
 

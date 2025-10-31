@@ -32,7 +32,7 @@ python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-ht
 
 # 4. Access endpoints
 # Health (public): http://localhost:8080/health
-# MCP: http://localhost:8080/mcp/{API_KEY}/{MD5_HASH}
+# MCP: http://localhost:8080/app/{API_KEY}/{MD5_HASH}/mcp
 ```
 
 ## Configuration
@@ -105,7 +105,7 @@ docker-compose up --build
 The server uses **dual-factor path authentication** requiring both the API key and its MD5 hash:
 
 ```
-https://your-domain.com/mcp/{API_KEY}/{MD5_HASH}
+https://your-domain.com/app/{API_KEY}/{MD5_HASH}/mcp
 ```
 
 ### Generating Endpoint URLs
@@ -125,13 +125,13 @@ scripts/get_mcp_url.sh YOUR_KEY your-domain.com
 import hashlib
 api_key = "your-api-key"
 api_key_hash = hashlib.md5(api_key.encode()).hexdigest()
-print(f"https://domain.com/mcp/{api_key}/{api_key_hash}")
+print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 ```
 
 ### Available Endpoints
 
 - **Health** (`/health`): Health check (public, no auth required)
-- **MCP** (`/mcp/{KEY}/{HASH}`): MCP protocol endpoint (authenticated)
+- **MCP** (`/app/{KEY}/{HASH}/mcp`): MCP protocol endpoint (authenticated)
 
 ### Security Benefits
 

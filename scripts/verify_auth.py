@@ -24,7 +24,7 @@ def calculate_mcp_url(api_key: str, domain: str = "your-domain.com", https: bool
         "domain": domain,
         "protocol": protocol,
         "endpoints": {
-            "mcp": f"{base_url}/mcp/{api_key}/{api_key_hash}",
+            "mcp": f"{base_url}/app/{api_key}/{api_key_hash}/mcp",
             "health": f"{base_url}/health"
         }
     }

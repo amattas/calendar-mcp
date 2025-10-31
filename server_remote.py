@@ -139,8 +139,9 @@ if api_key:
             "version": "2.0.0"
         }
 
-    # Mount the MCP app at /mcp/{api_key}/{api_key_hash}
-    app.mount(f"/mcp/{api_key}/{api_key_hash}", mcp_app)
+    # Mount the MCP app at /app/{api_key}/{api_key_hash}
+    # The MCP app has internal routes like /mcp, /sse, etc.
+    app.mount(f"/app/{api_key}/{api_key_hash}", mcp_app)
 
     # Add a custom 404 handler instead of catch-all route
     @app.exception_handler(404)
@@ -156,7 +157,7 @@ if api_key:
         import uvicorn
 
         logger.info("Starting MattasMCP remote server with dual-factor path authentication")
-        logger.info(f"MCP endpoint: http://{host}:{port}/mcp/{api_key}/{api_key_hash}")
+        logger.info(f"MCP endpoint: http://{host}:{port}/app/{api_key}/{api_key_hash}/mcp")
         logger.info(f"Health check (public): http://{host}:{port}/health")
         logger.info(f"API Key Hash: {api_key_hash}")
         logger.warning("Keep your API key secret and use HTTPS in production!")
