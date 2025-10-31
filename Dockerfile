@@ -58,7 +58,7 @@ EXPOSE 8080
 
 # Lightweight health check that doesn't trigger service initialization
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/app/health').read()" || exit 1
 
 # Run with uvloop and httptools for maximum performance
 # Single worker for scale-to-zero scenarios (less memory, faster startup)
