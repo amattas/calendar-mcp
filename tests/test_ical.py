@@ -123,40 +123,9 @@ class TestMultiCalendarService:
         
         with pytest.raises(ValueError, match="Calendar feed .* not found"):
             service._validate_feed_exists('nonexistent')
-    
+
     # ========== FEED MANAGEMENT TESTS ==========
-    
-    def test_add_feed(self):
-        """Test adding a new calendar feed"""
-        service = MultiCalendarService([])
-        
-        with patch.object(service, '_refresh_single_calendar') as mock_refresh:
-            mock_refresh.return_value = {
-                'status': 'success',
-                'name': 'New Calendar',
-                'url': 'https://example.com/new.ics'
-            }
-            
-            result = service.add_feed(
-                url='https://example.com/new.ics',
-                name='New Calendar'
-            )
-            
-            assert result['status'] == 'success'
-            assert len(service.feeds) == 1
-            mock_refresh.assert_called_once()
-    
-    def test_remove_feed(self):
-        """Test removing a calendar feed"""
-        service = MultiCalendarService([])
-        feed = CalendarFeed('https://example.com/test.ics', 'Test')
-        service.feeds[feed.id] = feed
-        
-        result = service.remove_feed('Test')
-        
-        assert result['status'] == 'removed'
-        assert len(service.feeds) == 0
-    
+
     def test_list_feeds(self):
         """Test listing all calendar feeds"""
         service = MultiCalendarService([])

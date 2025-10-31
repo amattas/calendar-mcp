@@ -157,11 +157,11 @@ print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 - `get_calendar_conflicts` - Detect scheduling conflicts across calendars
 
 ### Feed Management
-- `add_calendar_feed` - Add a new calendar feed
-- `remove_calendar_feed` - Remove a calendar feed
 - `refresh_calendar_feeds` - Manually refresh all feeds
 - `get_calendar_info` - Get information about configured feeds
 - `get_calendar_feeds` - List all configured feeds
+
+> **Note:** Calendar feeds are configured via the `ICAL_FEED_CONFIGS` environment variable. To add or remove feeds, update the configuration and restart the server.
 
 ### Server Management
 - `get_current_datetime` - Get current date/time in configured timezone

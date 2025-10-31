@@ -129,9 +129,8 @@ class MultiCalendarService:
             raise ValueError(
                 f"Calendar feed '{feed_identifier}' not found.\n"
                 f"Available feeds: {', '.join(available_feeds) if available_feeds else 'None'}\n"
-                "To manage feeds:\n"
-                "  • Use `list_calendar_feeds` to see all feeds\n"
-                "  • Use `add_calendar_feed` to add a new feed\n"
+                "Note: Feeds are configured via ICAL_FEED_CONFIGS environment variable.\n"
+                "  • Use `get_calendar_feeds` to see all configured feeds\n"
                 "  • Feed can be identified by name, ID, or URL"
             )
         return feed
@@ -256,8 +255,8 @@ class MultiCalendarService:
                         "To fix:\n"
                         "  • Verify the calendar URL is correct\n"
                         "  • Get a new sharing URL from your calendar provider\n"
-                        "  • Use `remove_calendar_feed` to remove this feed\n"
-                        "  • Use `add_calendar_feed` with the correct URL"
+                        "  • Update ICAL_FEED_CONFIGS environment variable with correct URL\n"
+                        "  • Restart the server after updating configuration"
                     )
                 else:
                     error_msg = f"HTTP error {e.response.status_code} for calendar '{feed.name}': {str(e)}"
@@ -696,47 +695,7 @@ class MultiCalendarService:
         info["refresh_interval_minutes"] = self.refresh_interval // 60
         
         return info
-    
-    def add_feed(self, url: str, name: Optional[str] = None) -> Dict[str, Any]:
-        """Add a new named feed URL and fetch it"""
-        # Validate URL
-        self._validate_url(url)
-        
-        for feed in self.feeds.values():
-            if feed.url == url:
-                return {
-                    "status": "already_exists",
-                    "feed_url": url,
-                    "feed_name": feed.name,
-                    "feed_id": feed.id
-                }
-        
-        feed = CalendarFeed(url, name)
-        self.feeds[feed.id] = feed
-        
-        return self._refresh_single_calendar(feed)
-    
-    def remove_feed(self, feed_identifier: str) -> Dict[str, Any]:
-        """Remove a feed by URL, name, or ID"""
-        # Validate feed exists
-        feed = self._validate_feed_exists(feed_identifier)
-        
-        if feed:
-            with self._lock:
-                del self.feeds[feed.id]
-            
-            return {
-                "status": "removed",
-                "feed_url": feed.url,
-                "feed_name": feed.name,
-                "feed_id": feed.id
-            }
-        
-        return {
-            "status": "not_found",
-            "feed_identifier": feed_identifier
-        }
-    
+
     def list_feeds(self) -> List[Dict[str, str]]:
         """List all configured feeds with their names and IDs"""
         feeds_list = []
@@ -776,48 +735,7 @@ class MultiCalendarService:
         #     description="Retrieve calendar events within a specified date range from configured iCalendar feeds. Parameters: start_date (YYYY-MM-DD format, defaults to today), end_date (YYYY-MM-DD format, defaults to 7 days from start), calendar_name (optional filter by specific calendar). Returns: Dictionary with events array containing title, start/end times, location, description, and source feed. Use for: Getting events for specific date ranges, filtering by calendar, or retrieving all events across calendars.",
         #     annotations={"title": "Get Calendar Events"}
         # )(self.get_events_for_mcp)
-        
-        self.mcp.tool(
-            name="add_calendar_feed",
-            description="""Add a new iCalendar feed URL to the list of monitored calendars.
 
-## Parameters
-• url: iCalendar feed URL (required)
-• name: Friendly name for the feed (optional)
-
-## Returns
-Success/error status with feed details
-
-## Use Cases
-• Subscribe to Google Calendar feeds
-• Add Outlook calendar subscriptions  
-• Monitor other iCal sources
-
-## Related Tools
-• Call `get_calendar_feeds` to see existing feeds before adding
-• Call `refresh_calendar_feeds` after adding to sync immediately""",
-            title="Add Calendar Feed",
-            annotations={"title": "Add Calendar Feed"}
-        )(self.add_feed)
-        
-        self.mcp.tool(
-            name="remove_calendar_feed",
-            description="""Remove an iCalendar feed from the list of monitored calendars.
-
-## Parameters
-• url: The feed URL to remove (required)
-  - Call `get_calendar_feeds` to see available feed URLs
-
-## Returns
-Success/error status
-
-## Use Cases
-• Unsubscribe from calendar feeds no longer needed
-• Clean up old or broken feed subscriptions""",
-            title="Remove Calendar Feed",
-            annotations={"title": "Remove Calendar Feed"}
-        )(self.remove_feed_for_mcp)
-        
         self.mcp.tool(
             name="refresh_calendar_feeds",
             description="""Force refresh all calendar feeds to get the latest events.
@@ -1212,19 +1130,7 @@ Events matching the search query in:
         except Exception as e:
             logger.error(f"Error getting events: {e}")
             return {"error": str(e)}
-    
-    def remove_feed_for_mcp(self, url: str) -> Dict[str, Any]:
-        """MCP tool wrapper for remove_feed"""
-        try:
-            result = self.remove_feed(url)
-            if result['status'] == 'removed':
-                return {"success": True, "message": f"Removed calendar feed: {url}"}
-            else:
-                return {"error": f"Feed not found: {url}"}
-        except Exception as e:
-            logger.error(f"Error removing feed: {e}")
-            return {"error": str(e)}
-    
+
     def refresh_feeds_for_mcp(self) -> Dict[str, Any]:
         """MCP tool wrapper for refresh_all_calendars"""
         try:
