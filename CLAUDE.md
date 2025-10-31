@@ -9,9 +9,8 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 **Core Service:**
 - **iCalendar**: Fetches and parses .ics calendar feeds (Google Calendar, Outlook, etc.)
 
-**Deployment Modes:**
-1. **stdio mode** (`server.py`): For local use with Claude Desktop
-2. **HTTP mode** (`server_remote.py`): For remote access via HTTP with dual-factor authentication
+**Deployment:**
+- **HTTP mode** (`server_remote.py`): HTTP API with dual-factor authentication
 
 ## Quick Reference
 
@@ -22,8 +21,7 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 ## Architecture
 
 ### Main Entry Points
-- `server.py` - stdio mode MCP server (local Claude Desktop integration)
-- `server_remote.py` - HTTP mode MCP server (remote access with authentication)
+- `server_remote.py` - HTTP API server with authentication
 
 ### Service Layer (`services/`)
 - `services/ical.py` - Multi-calendar feed management with recurring event support
@@ -61,11 +59,6 @@ The server loads from `.env` and `.env.local` (`.env.local` takes precedence).
 
 ### Running Locally
 
-**stdio mode:**
-```bash
-python server.py
-```
-
 **HTTP mode:**
 ```bash
 MCP_API_KEY=test-key python server_remote.py
@@ -90,14 +83,8 @@ pytest -m unit          # Unit tests
 
 ### Docker
 
-**stdio mode:**
 ```bash
 docker-compose up --build
-```
-
-**HTTP mode:**
-```bash
-docker-compose -f docker-compose.http.yml up --build
 ```
 
 ## Testing Architecture
@@ -158,7 +145,7 @@ Cache keys: `{service}:{operation}:{identifier}`
 
 4. **Thread safety**: Calendar service uses background refresh. Always acquire `_lock` before modifying state.
 
-5. **Docker environment**: `Dockerfile` is for stdio mode. Use `Dockerfile.http` for HTTP mode.
+5. **Docker deployment**: Single `Dockerfile` optimized for HTTP mode with fast cold starts.
 
 ## Server-Level Tools
 
@@ -284,8 +271,8 @@ calendar-mcp/
 │   └── test_ical.py         # Tests
 ├── scripts/
 │   └── verify_auth.py       # Auth URL calculator
-├── Dockerfile               # stdio mode
-├── Dockerfile.http          # HTTP mode
+├── Dockerfile               # HTTP mode (optimized)
+├── docker-compose.yml       # Docker compose config
 ├── .env.example             # Config template
 └── requirements.txt         # Dependencies
 ```
