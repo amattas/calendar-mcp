@@ -11,7 +11,7 @@ A Model Context Protocol (MCP) server for iCalendar feed management and event qu
 - **Automatic Refresh**: Configurable refresh intervals for feed updates
 - **Timezone Support**: Proper timezone normalization and handling
 - **Redis Caching**: Optional caching for improved performance
-- **Multiple Deployment Modes**: stdio (Claude Desktop), HTTP (remote), and Kubernetes
+- **Multiple Deployment Modes**: stdio (Claude Desktop) and HTTP (remote)
 
 ## Quick Start
 
@@ -36,7 +36,7 @@ See [claude_desktop_config.json.example](claude_desktop_config.json.example) for
 
 ### HTTP Server Mode
 
-For remote access and testing before Kubernetes deployment:
+For remote access:
 
 ```bash
 # 1. Configure environment
@@ -47,39 +47,12 @@ cp .env.example .env.local
 docker-compose -f docker-compose.http.yml up --build
 
 # 3. Calculate your endpoint URLs
-python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-https
+python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:80 --no-https
 
 # 4. Access endpoints
-# Health: http://localhost:8080/{API_KEY}/{MD5_HASH}/health/
-# MCP: http://localhost:8080/{API_KEY}/{MD5_HASH}/mcp
+# Health (public): http://localhost:80/health
+# MCP: http://localhost:80/{API_KEY}/{MD5_HASH}/mcp
 ```
-
-### Kubernetes Deployment
-
-Production deployment with ingress controller:
-
-```bash
-# 1. Build and push image
-docker build -f Dockerfile.http -t your-registry/calendar-mcp:latest .
-docker push your-registry/calendar-mcp:latest
-
-# 2. Configure secrets
-cp .env.k8s.example .env.k8s
-# Edit .env.k8s with your credentials
-kubectl create secret generic calendar-mcp-secrets --from-env-file=.env.k8s
-
-# 3. Update deployment manifest
-# Edit k8s-deployment.yaml: update image and ingress host
-
-# 4. Deploy
-kubectl apply -f k8s-deployment.yaml
-
-# 5. Calculate endpoint URLs
-export MCP_API_KEY=$(kubectl get secret calendar-mcp-secrets -o jsonpath='{.data.MCP_API_KEY}' | base64 -d)
-python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain your-domain.com
-```
-
-See [Kubernetes Deployment](#kubernetes-deployment) section for complete guide.
 
 ## Configuration
 
@@ -93,10 +66,10 @@ See [Kubernetes Deployment](#kubernetes-deployment) section for complete guide.
 - `REFRESH_INTERVAL` - Minutes between refreshes (default: `60`)
 - `DEBUG` - Enable debug logging (default: `false`)
 
-**HTTP/Kubernetes Mode:**
+**HTTP Mode:**
 - `MCP_API_KEY` - API key for authentication (strongly recommended)
 - `HOST` - Bind address (default: `0.0.0.0`)
-- `PORT` - Listen port (default: `8080`)
+- `PORT` - Listen port (default: `80`)
 
 **Redis Cache (Optional):**
 - `REDIS_HOST` - Redis hostname
@@ -152,23 +125,12 @@ docker-compose up --build
 docker-compose -f docker-compose.http.yml up --build
 ```
 
-**Use case:** Remote HTTP access, testing
+**Use case:** Remote HTTP access, production deployment
 **Entry point:** `server_remote.py`
-**Port:** 8080
+**Port:** 80
 **Authentication:** Dual-factor path (API key + MD5 hash)
 
-### 3. Kubernetes Mode
-
-```bash
-kubectl apply -f k8s-deployment.yaml
-```
-
-**Use case:** Production deployment
-**Image:** `Dockerfile.http`
-**Port:** 8080
-**Features:** Replicas, health checks, ingress, autoscaling
-
-## Authentication (HTTP/Kubernetes Mode)
+## Authentication (HTTP Mode)
 
 The server uses **dual-factor path authentication** requiring both the API key and its MD5 hash:
 
@@ -198,10 +160,8 @@ print(f"https://domain.com/{api_key}/{api_key_hash}/mcp")
 
 ### Available Endpoints
 
-- **Root** (`/`): Server info (public, no auth)
-- **Health** (`/{KEY}/{HASH}/health/`): Health check
-- **Info** (`/{KEY}/{HASH}/info/`): Available tools and services
-- **MCP** (`/{KEY}/{HASH}/mcp`): MCP protocol endpoint
+- **Health** (`/health`): Health check (public, no auth required)
+- **MCP** (`/{KEY}/{HASH}/mcp`): MCP protocol endpoint (authenticated)
 
 ### Security Benefits
 
@@ -209,146 +169,6 @@ print(f"https://domain.com/{api_key}/{api_key_hash}/mcp")
 2. **Hash Not Stored**: MD5 hash calculated at runtime
 3. **Path Obfuscation**: Even with one factor, endpoint is inaccessible
 4. **No Token Exchange**: Stateless authentication
-
-## Kubernetes Deployment
-
-### Prerequisites
-
-- Kubernetes cluster running
-- `kubectl` configured
-- Container registry access
-- Ingress controller installed (nginx, traefik, etc.)
-
-### Step-by-Step Deployment
-
-**1. Generate Strong API Key:**
-```bash
-openssl rand -base64 32
-```
-
-**2. Create Kubernetes Secret:**
-```bash
-cp .env.k8s.example .env.k8s
-# Edit .env.k8s with your configuration
-
-kubectl create secret generic calendar-mcp-secrets \
-  --from-env-file=.env.k8s \
-  --namespace=default
-```
-
-**3. Update Deployment Manifest:**
-
-Edit `k8s-deployment.yaml`:
-- Update `image:` with your registry URL
-- Update `host:` in ingress with your domain
-
-**4. Deploy:**
-```bash
-kubectl apply -f k8s-deployment.yaml
-```
-
-**5. Verify:**
-```bash
-# Check pods
-kubectl get pods -l app=calendar-mcp
-
-# Check ingress
-kubectl get ingress calendar-mcp
-
-# View logs
-kubectl logs -l app=calendar-mcp --tail=50 -f
-```
-
-**6. Get Endpoint URLs:**
-```bash
-export MCP_API_KEY=$(kubectl get secret calendar-mcp-secrets \
-  -o jsonpath='{.data.MCP_API_KEY}' | base64 -d)
-
-python scripts/verify_auth.py \
-  --api-key "$MCP_API_KEY" \
-  --domain your-domain.com
-```
-
-### SSL/TLS Configuration
-
-**Using cert-manager (recommended):**
-
-```bash
-# Install cert-manager
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-# Create ClusterIssuer
-kubectl apply -f - <<EOF
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: your-email@example.com
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF
-
-# Uncomment TLS section in k8s-deployment.yaml
-```
-
-### Scaling
-
-**Manual:**
-```bash
-kubectl scale deployment calendar-mcp --replicas=5
-```
-
-**Auto-scaling:**
-```bash
-kubectl autoscale deployment calendar-mcp \
-  --min=2 --max=10 --cpu-percent=70
-```
-
-### Monitoring
-
-```bash
-# Logs
-kubectl logs -l app=calendar-mcp --tail=100 -f
-
-# Resource usage
-kubectl top pods -l app=calendar-mcp
-
-# Events
-kubectl get events --sort-by='.lastTimestamp'
-```
-
-### Troubleshooting
-
-**Pods not starting:**
-```bash
-kubectl describe pod calendar-mcp-xxxxxxxxx-xxxxx
-kubectl get events --sort-by='.lastTimestamp'
-```
-
-**Connection issues:**
-```bash
-# Port forward to test directly
-kubectl port-forward svc/calendar-mcp 8080:8080
-curl http://localhost:8080/
-```
-
-**Configuration issues:**
-```bash
-# Check ConfigMap and Secret
-kubectl get configmap calendar-mcp-config -o yaml
-kubectl get secret calendar-mcp-secrets -o yaml
-
-# Update and restart
-kubectl edit configmap calendar-mcp-config
-kubectl rollout restart deployment calendar-mcp
-```
 
 ## Available MCP Tools
 
@@ -399,40 +219,20 @@ openssl rand -base64 32  # Minimum 32 bytes recommended
 - Use cert-manager for automatic renewal
 
 **3. Secure Storage:**
-- ✅ Store in Kubernetes Secrets
+- ✅ Store in environment variables or Docker secrets
 - ✅ Use external secret management (Vault, AWS Secrets Manager)
 - ✅ Encrypt secrets at rest
 - ❌ Never commit to version control
 - ❌ Never log API keys
 
 **4. Network Security:**
-```yaml
-# Network Policy example
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: calendar-mcp-netpol
-spec:
-  podSelector:
-    matchLabels:
-      app: calendar-mcp
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    ports:
-    - protocol: TCP
-      port: 8080
-```
+- Use firewall rules to restrict access
+- Consider reverse proxy with additional authentication
+- Enable HTTPS with valid SSL certificates
 
 **5. Rate Limiting:**
-```yaml
-# Ingress annotation
-nginx.ingress.kubernetes.io/limit-rps: "10"
-```
+- Configure rate limiting at reverse proxy level
+- Use tools like nginx rate limiting or fail2ban
 
 ### Security Headers
 
@@ -453,13 +253,12 @@ If API key is compromised:
 # 1. Generate new key
 NEW_KEY=$(openssl rand -base64 32)
 
-# 2. Update secret
-kubectl create secret generic calendar-mcp-secrets \
-  --from-literal=MCP_API_KEY="$NEW_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f -
+# 2. Update .env.local file
+echo "MCP_API_KEY=$NEW_KEY" >> .env.local
 
-# 3. Restart pods
-kubectl rollout restart deployment calendar-mcp
+# 3. Restart the Docker container
+docker-compose -f docker-compose.http.yml down
+docker-compose -f docker-compose.http.yml up -d
 
 # 4. Get new endpoint URLs
 python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
@@ -470,18 +269,17 @@ python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
 ## Production Checklist
 
 - [ ] Strong MCP_API_KEY generated (32+ bytes)
-- [ ] HTTPS/TLS configured
-- [ ] SSL redirect enabled
+- [ ] HTTPS/TLS configured with valid certificates
+- [ ] SSL redirect enabled at reverse proxy
 - [ ] Certificate auto-renewal configured
-- [ ] Network policies applied
-- [ ] Rate limiting configured
-- [ ] Secrets encrypted at rest
-- [ ] RBAC configured for secret access
+- [ ] Firewall rules configured
+- [ ] Rate limiting configured at reverse proxy
+- [ ] Environment variables secured
 - [ ] Monitoring and alerting configured
 - [ ] Key rotation schedule established
 - [ ] Backup and recovery tested
 - [ ] Security scanning enabled
-- [ ] Pod Security Standards enforced
+- [ ] Access logs reviewed regularly
 
 ## Testing
 
@@ -496,13 +294,10 @@ python scripts/verify_auth.py --api-key "$NEW_KEY" --domain your-domain.com
 
 ```bash
 # Calculate endpoint URLs
-python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain localhost:8080 --no-https
+python scripts/verify_auth.py --api-key "$MCP_API_KEY" --domain localhost:80 --no-https
 
-# Test health check
-curl http://localhost:8080/$API_KEY/$API_HASH/health/
-
-# Test server info
-curl http://localhost:8080/$API_KEY/$API_HASH/info/
+# Test health check (public endpoint)
+curl http://localhost:80/health
 ```
 
 ## Troubleshooting
@@ -526,18 +321,15 @@ Ensure `ICAL_FEED_CONFIGS` is set correctly with valid JSON.
 - Use single quotes around JSON in environment variables
 - Escape double quotes properly
 
-### 502 Bad Gateway (Kubernetes)
+### Container Won't Start
 ```bash
-# Check pods are ready
-kubectl get pods -l app=calendar-mcp
-
-# Check logs for errors
-kubectl logs -l app=calendar-mcp --tail=50
+# Check container logs
+docker logs calendar-mcp
 
 # Common causes:
 # - Missing ICAL_FEED_CONFIGS
 # - Invalid JSON in ICAL_FEED_CONFIGS
-# - Missing MCP_API_KEY
+# - Missing MCP_API_KEY (HTTP mode)
 ```
 
 ## Architecture

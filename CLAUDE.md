@@ -50,7 +50,7 @@ The server loads from `.env` and `.env.local` (`.env.local` takes precedence).
 **HTTP Mode:**
 - `MCP_API_KEY` - API key for authentication (strongly recommended)
 - `HOST` - Bind address (default: "0.0.0.0")
-- `PORT` - Listen port (default: 8080)
+- `PORT` - Listen port (default: 80)
 
 **Redis Cache:**
 - `REDIS_HOST` / `REDIS_SSL_PORT` / `REDIS_KEY` - Optional caching
@@ -100,22 +100,6 @@ docker-compose up --build
 docker-compose -f docker-compose.http.yml up --build
 ```
 
-### Kubernetes
-
-```bash
-# Build and push
-docker build -f Dockerfile.http -t your-registry/calendar-mcp:latest .
-docker push your-registry/calendar-mcp:latest
-
-# Configure secrets
-kubectl create secret generic calendar-mcp-secrets --from-env-file=.env.k8s
-
-# Deploy
-kubectl apply -f k8s-deployment.yaml
-```
-
-See [README.md](README.md#kubernetes-deployment) for complete guide.
-
 ## Testing Architecture
 
 Tests use pytest with extensive mocking via `conftest.py`. Key fixtures:
@@ -142,10 +126,8 @@ When `MCP_API_KEY` is set:
 - **Dual-factor path**: `/{api_key}/{md5_hash}/endpoint`
 - MD5 hash: `hashlib.md5(api_key.encode()).hexdigest()`
 - Endpoints:
-  - MCP: `/{key}/{hash}/mcp`
-  - Health: `/{key}/{hash}/health/`
-  - Info: `/{key}/{hash}/info/`
-  - Root: `/` (public)
+  - MCP: `/{key}/{hash}/mcp` (authenticated)
+  - Health: `/health` (public, no auth)
 - Use `scripts/verify_auth.py` to calculate correct URLs
 - Security headers added automatically
 - Access logs disabled to prevent key leakage
@@ -176,7 +158,7 @@ Cache keys: `{service}:{operation}:{identifier}`
 
 4. **Thread safety**: Calendar service uses background refresh. Always acquire `_lock` before modifying state.
 
-5. **Docker environment**: `Dockerfile` is for stdio mode. Use `Dockerfile.http` for HTTP/Kubernetes.
+5. **Docker environment**: `Dockerfile` is for stdio mode. Use `Dockerfile.http` for HTTP mode.
 
 ## Server-Level Tools
 
@@ -304,7 +286,6 @@ calendar-mcp/
 │   └── verify_auth.py       # Auth URL calculator
 ├── Dockerfile               # stdio mode
 ├── Dockerfile.http          # HTTP mode
-├── k8s-deployment.yaml      # Kubernetes
 ├── .env.example             # Config template
 └── requirements.txt         # Dependencies
 ```
@@ -315,7 +296,6 @@ calendar-mcp/
 - **AGENTS.md** - Detailed development guide for AI agents
 - **CLAUDE.md** - This file, Claude Code specific guidance
 - `.env.example` - Environment variable documentation
-- `k8s-deployment.yaml` - Kubernetes deployment with inline comments
 
 ## Useful References
 

@@ -29,8 +29,8 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 **HTTP Mode:**
 - File: `server_remote.py`
 - Transport: HTTP
-- Use: Remote access, Kubernetes deployment
-- Port: 8080 (default)
+- Use: Remote access, production deployment
+- Port: 80 (default)
 - Authentication: Dual-factor path (API key + MD5 hash)
 
 ### Service Layer (`services/`)
@@ -105,7 +105,7 @@ def get_events_today() -> Dict[str, Any]:
 
 - `MCP_API_KEY`: API key for authentication
 - `HOST`: Bind address (default: `0.0.0.0`)
-- `PORT`: Listen port (default: `8080`)
+- `PORT`: Listen port (default: `80`)
 
 ### Redis Cache
 
@@ -232,10 +232,8 @@ When `MCP_API_KEY` is set:
 4. Access logs disabled to prevent key leakage
 
 **Endpoints:**
-- MCP: `/{api_key}/{api_key_hash}/mcp`
-- Health: `/{api_key}/{api_key_hash}/health/`
-- Info: `/{api_key}/{api_key_hash}/info/`
-- Root: `/` (public, returns server info)
+- MCP: `/{api_key}/{api_key_hash}/mcp` (authenticated)
+- Health: `/health` (public, no auth)
 
 **Scripts for URL calculation:**
 - `scripts/verify_auth.py`: Python script with detailed output
@@ -536,9 +534,7 @@ calendar-mcp/
 ├── Dockerfile.http          # HTTP mode Docker
 ├── docker-compose.yml       # stdio mode compose
 ├── docker-compose.http.yml  # HTTP mode compose
-├── k8s-deployment.yaml      # Kubernetes manifests
 ├── .env.example             # Environment template
-├── .env.k8s.example         # Kubernetes secret template
 └── requirements.txt         # Python dependencies
 ```
 

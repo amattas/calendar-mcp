@@ -28,10 +28,10 @@ USER mcp
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
-ENV PORT=8080
+ENV PORT=80
 
-# Expose port 8080 for Kubernetes ingress
-EXPOSE 8080
+# Expose port 80 for HTTP access
+EXPOSE 80
 
 # Health check endpoint (uses root info endpoint for both modes)
 # In authenticated mode, the server will expose root info, in unauthenticated mode it's at /mcp

@@ -39,7 +39,7 @@ if api_key:
     from server import mcp, get_ical_service, initialize_services
 
     # Get configuration
-    port = int(os.getenv("PORT", "8080"))
+    port = int(os.getenv("PORT", "80"))
     host = os.getenv("HOST", "0.0.0.0")
 
     # Check configuration
@@ -98,16 +98,10 @@ if api_key:
     # Add security middleware
     app.add_middleware(SecurityMiddleware)
     
-    # Create a simple health check app
-    health_app = FastAPI(
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None
-    )
-    
-    @health_app.get("/")
+    # Create a simple public health check endpoint
+    @app.get("/health")
     async def health_check():
-        """Health check endpoint"""
+        """Public health check endpoint for monitoring"""
         services = {
             "ical": get_ical_service() is not None
         }
@@ -115,62 +109,9 @@ if api_key:
         return {
             "status": "healthy",
             "services": services,
-            "authenticated": True,
-            "auth_type": "dual-factor-path",
             "version": "2.0.0"
         }
-    
-    # Create an info app for the root path
-    info_app = FastAPI(
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None
-    )
-    
-    @info_app.get("/")
-    async def server_info(request: Request):
-        """Server information endpoint"""
-        # Get the tools that are available
-        tools = []
 
-        if get_ical_service():
-            tools.extend(["add_calendar_feed", "remove_calendar_feed", "refresh_calendar_feeds",
-                         "get_events_on_date", "get_events_between_dates", "get_events_after_date",
-                         "search_calendar_events",
-                         "get_calendar_info", "get_today_events", "get_upcoming_events",
-                         "get_calendar_feeds", "get_week_events", "get_month_events",
-                         "get_tomorrow_events", "get_calendar_conflicts"])
-
-        # Always available server tools
-        tools.extend(["get_server_status", "get_server_config", "get_current_datetime"])
-        
-        # Get host from request headers for proper URL construction
-        host_header = request.headers.get("host", f"{host}:{port}")
-        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
-        
-        return {
-            "name": "Calendar MCP Server",
-            "version": "2.1.0",
-            "protocol": scheme,
-            "mcp_endpoint": f"{scheme}://{host_header}/{api_key}/{api_key_hash}/mcp",
-            "health_endpoint": f"{scheme}://{host_header}/{api_key}/{api_key_hash}/health/",
-            "info_endpoint": f"{scheme}://{host_header}/{api_key}/{api_key_hash}/info/",
-            "authentication": "dual-factor-path",
-            "auth_note": "Path requires both API key and its MD5 hash for enhanced security",
-            "tools_available": len(tools),
-            "tools": tools,
-            "services": {
-                "ical": {
-                    "enabled": get_ical_service() is not None,
-                    "feeds": len(get_ical_service().feeds) if get_ical_service() else 0
-                }
-            }
-        }
-    
-    # Mount apps in order - more specific paths first
-    # Format: /{api_key}/{api_key_hash}/endpoint
-    app.mount(f"/{api_key}/{api_key_hash}/health", health_app)
-    app.mount(f"/{api_key}/{api_key_hash}/info", info_app)
     # Mount the MCP app at /{api_key}/{api_key_hash} - it will handle /mcp internally
     app.mount(f"/{api_key}/{api_key_hash}", mcp_app)
     
@@ -187,8 +128,7 @@ if api_key:
         # Run HTTP server with authentication
         logger.info("Starting MattasMCP remote server with dual-factor path authentication")
         logger.info(f"MCP endpoint: http://{host}:{port}/{api_key}/{api_key_hash}/mcp")
-        logger.info(f"Health check: http://{host}:{port}/{api_key}/{api_key_hash}/health")
-        logger.info(f"Server info: http://{host}:{port}/{api_key}/{api_key_hash}/info")
+        logger.info(f"Health check (public): http://{host}:{port}/health")
         logger.info(f"API Key Hash: {api_key_hash}")
         logger.warning("Keep your API key secret and use HTTPS in production!")
         
@@ -211,7 +151,7 @@ else:
 
     if __name__ == "__main__":
         # Get configuration
-        port = int(os.getenv("PORT", "8080"))
+        port = int(os.getenv("PORT", "80"))
         host = os.getenv("HOST", "0.0.0.0")
 
         # Check configuration
