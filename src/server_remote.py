@@ -41,7 +41,7 @@ def lazy_initialize_services():
 
     logger.info("Lazy initializing services on first request...")
 
-    from server import initialize_services
+    from .server import initialize_services
     initialize_services()
 
     _services_initialized = True
@@ -55,7 +55,7 @@ if api_key:
     from fastapi import FastAPI, Request, HTTPException
     from fastapi.responses import JSONResponse
     from starlette.middleware.base import BaseHTTPMiddleware
-    from server import mcp, get_ical_service
+    from .server import mcp, get_ical_service
 
     # Validate API key format (prevent path traversal attacks)
     if not api_key.replace("-", "").replace("_", "").isalnum():
@@ -180,7 +180,7 @@ else:
     logger.warning("MCP_API_KEY not set - running in UNAUTHENTICATED mode")
     logger.warning("This is not recommended for production use!")
 
-    from server import mcp, get_ical_service
+    from .server import mcp, get_ical_service
 
     # DO NOT initialize services here - lazy init on first request
 

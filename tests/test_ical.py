@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime, date, timedelta, timezone
-from services.ical import MultiCalendarService, CalendarFeed
+from src.services.ical import MultiCalendarService, CalendarFeed
 from icalendar import Calendar, Event
 import requests
 
@@ -43,8 +43,8 @@ class TestMultiCalendarService:
     
     # ========== INITIALIZATION TESTS ==========
     
-    @patch('services.ical.MultiCalendarService.refresh_all_calendars')
-    @patch('services.ical.MultiCalendarService._schedule_refresh')
+    @patch('src.services.ical.MultiCalendarService.refresh_all_calendars')
+    @patch('src.services.ical.MultiCalendarService._schedule_refresh')
     def test_init_with_feeds(self, mock_schedule, mock_refresh):
         """Test service initialization with feed configurations"""
         feed_configs = [
@@ -59,8 +59,8 @@ class TestMultiCalendarService:
         mock_refresh.assert_called_once()
         mock_schedule.assert_called_once()
     
-    @patch('services.ical.MultiCalendarService.refresh_all_calendars')
-    @patch('services.ical.MultiCalendarService._schedule_refresh')
+    @patch('src.services.ical.MultiCalendarService.refresh_all_calendars')
+    @patch('src.services.ical.MultiCalendarService._schedule_refresh')
     def test_init_empty_feeds(self, mock_schedule, mock_refresh):
         """Test service initialization with no feeds"""
         service = MultiCalendarService([], refresh_interval_minutes=60)
@@ -438,7 +438,7 @@ class TestMultiCalendarService:
         # Cancel timer for cleanup
         service._refresh_timer.cancel()
     
-    @patch('services.ical.MultiCalendarService.refresh_all_calendars')
+    @patch('src.services.ical.MultiCalendarService.refresh_all_calendars')
     def test_auto_refresh(self, mock_refresh):
         """Test automatic refresh functionality"""
         service = MultiCalendarService([], refresh_interval_minutes=60)

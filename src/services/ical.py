@@ -11,11 +11,11 @@ from dateutil.tz import UTC
 import hashlib
 import recurring_ical_events
 from typing import TYPE_CHECKING
-from services.cache import cache_aside, CacheConfig, CacheTTL
+from .cache import cache_aside, CacheConfig, CacheTTL
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
-    from services.cache import RedisCache
+    from .cache import RedisCache
 
 logger = logging.getLogger(__name__)
 

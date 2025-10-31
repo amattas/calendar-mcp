@@ -37,10 +37,8 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir --no-deps /wheels/*.whl && \
     rm -rf /wheels
 
-# Copy application code
-COPY server.py .
-COPY server_remote.py .
-COPY services/ ./services/
+# Copy application code from src/
+COPY src/ ./src/
 
 # Precompile Python bytecode for faster startup
 RUN python -m compileall -q /app
@@ -64,4 +62,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run with uvloop and httptools for maximum performance
 # Single worker for scale-to-zero scenarios (less memory, faster startup)
-CMD ["python", "-m", "uvicorn", "server_remote:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "uvloop", "--http", "httptools", "--workers", "1", "--log-level", "warning", "--no-access-log"]
+CMD ["python", "-m", "uvicorn", "src.server_remote:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "uvloop", "--http", "httptools", "--workers", "1", "--log-level", "warning", "--no-access-log"]

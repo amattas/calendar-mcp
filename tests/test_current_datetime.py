@@ -11,7 +11,7 @@ def test_get_current_datetime_utc():
     """Test get_current_datetime with default UTC timezone"""
     with patch.dict(os.environ, {'TIMEZONE': 'UTC'}):
         # Import the function
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -52,7 +52,7 @@ def test_get_current_datetime_utc():
 def test_get_current_datetime_custom_timezone():
     """Test get_current_datetime with custom timezone"""
     with patch.dict(os.environ, {'TIMEZONE': 'America/New_York'}):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -67,7 +67,7 @@ def test_get_current_datetime_custom_timezone():
 def test_get_current_datetime_asia_timezone():
     """Test get_current_datetime with Asian timezone"""
     with patch.dict(os.environ, {'TIMEZONE': 'Asia/Tokyo'}):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -82,7 +82,7 @@ def test_get_current_datetime_asia_timezone():
 def test_get_current_datetime_invalid_timezone_fallback():
     """Test that invalid timezone falls back to UTC"""
     with patch.dict(os.environ, {'TIMEZONE': 'Invalid/Timezone'}):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -94,7 +94,7 @@ def test_get_current_datetime_invalid_timezone_fallback():
 def test_get_current_datetime_no_timezone_env():
     """Test get_current_datetime when TIMEZONE env var is not set"""
     with patch.dict(os.environ, {}, clear=True):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -106,7 +106,7 @@ def test_get_current_datetime_no_timezone_env():
 def test_get_current_datetime_europe_timezone():
     """Test get_current_datetime with European timezone"""
     with patch.dict(os.environ, {'TIMEZONE': 'Europe/London'}):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 
@@ -121,7 +121,7 @@ def test_get_current_datetime_europe_timezone():
 def test_datetime_fields_are_synchronized():
     """Test that all datetime fields represent the same moment in time"""
     with patch.dict(os.environ, {'TIMEZONE': 'America/Los_Angeles'}):
-        from server import get_current_datetime
+        from src.server import get_current_datetime
 
         result = get_current_datetime()
 

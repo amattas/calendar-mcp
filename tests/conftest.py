@@ -101,7 +101,7 @@ class MockTodoistComment:
 @pytest.fixture
 def mock_todoist_api():
     """Mock TodoistAPI client"""
-    with patch('services.todoist.TodoistAPI') as mock_api_class:
+    with patch('src.services.todoist.TodoistAPI') as mock_api_class:
         mock_api = MagicMock()
         mock_api_class.return_value = mock_api
         
@@ -146,7 +146,7 @@ def mock_todoist_api():
 def todoist_service(mock_todoist_api):
     """Create TodoistService with mocked API"""
     with patch.dict(os.environ, {'TODOIST_API_TOKEN': 'test_token', 'TIMEZONE': 'UTC'}):
-        from services.todoist import TodoistService
+        from src.services.todoist import TodoistService
         service = TodoistService('test_token')
         return service
 
@@ -225,7 +225,7 @@ def homeassistant_client(mock_websocket, mock_ha_responses):
             mock_get.return_value.json.return_value = mock_ha_responses['states']
             mock_get.return_value.status_code = 200
             
-            from services.homeassistant import HomeAssistantClient
+            from src.services.homeassistant import HomeAssistantClient
             client = HomeAssistantClient(
                 url='http://localhost:8123',
                 access_token='test_token'

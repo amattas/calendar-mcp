@@ -16,8 +16,8 @@ from zoneinfo import ZoneInfo
 from fastmcp import FastMCP
 
 # Import our service modules
-from services.ical import MultiCalendarService
-from services.cache import RedisCache
+from .services.ical import MultiCalendarService
+from .services.cache import RedisCache
 
 # Load environment variables with correct precedence
 config: Dict[str, str] = {}
