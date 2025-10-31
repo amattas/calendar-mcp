@@ -6,11 +6,11 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "8080:8080"
     environment:
       # Server configuration
       - HOST=0.0.0.0
-      - PORT=80
+      - PORT=8080
       - DEBUG=${DEBUG:-false}
 
       # Authentication (REQUIRED for production)
@@ -36,7 +36,7 @@ services:
     # Lightweight health check (doesn't trigger service initialization)
     # Optimized for scale-to-zero scenarios with fast cold starts
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:80/health').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
       interval: 30s
       timeout: 3s
       retries: 3

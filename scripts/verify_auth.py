@@ -24,10 +24,8 @@ def calculate_mcp_url(api_key: str, domain: str = "your-domain.com", https: bool
         "domain": domain,
         "protocol": protocol,
         "endpoints": {
-            "mcp": f"{base_url}/{api_key}/{api_key_hash}/mcp",
-            "health": f"{base_url}/{api_key}/{api_key_hash}/health/",
-            "info": f"{base_url}/{api_key}/{api_key_hash}/info/",
-            "root": f"{base_url}/"
+            "mcp": f"{base_url}/mcp/{api_key}/{api_key_hash}",
+            "health": f"{base_url}/health"
         }
     }
 
@@ -100,12 +98,10 @@ Examples:
         print(f"Protocol:        {result['protocol']}")
         print()
         print("Endpoints:")
-        print(f"  MCP:     {result['endpoints']['mcp']}")
-        print(f"  Health:  {result['endpoints']['health']}")
-        print(f"  Info:    {result['endpoints']['info']}")
-        print(f"  Root:    {result['endpoints']['root']}")
+        print(f"  MCP (authenticated):  {result['endpoints']['mcp']}")
+        print(f"  Health (public):      {result['endpoints']['health']}")
         print()
-        print("⚠️  Keep these URLs confidential. They contain authentication credentials.")
+        print("⚠️  Keep the MCP URL confidential. It contains authentication credentials.")
         print()
 
 

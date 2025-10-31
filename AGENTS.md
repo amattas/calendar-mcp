@@ -23,7 +23,7 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 - File: `server_remote.py`
 - Transport: HTTP
 - Use: Remote access, production deployment
-- Port: 80 (default)
+- Port: 8080 (default)
 - Authentication: Dual-factor path (API key + MD5 hash)
 
 ### Service Layer (`services/`)

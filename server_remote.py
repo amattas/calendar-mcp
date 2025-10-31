@@ -70,7 +70,7 @@ if api_key:
     logger.info(f"API key hash calculated: {api_key_hash[:8]}... (showing first 8 chars)")
 
     # Get configuration
-    port = int(os.getenv("PORT", "80"))
+    port = int(os.getenv("PORT", "8080"))
     host = os.getenv("HOST", "0.0.0.0")
 
     # Check configuration
@@ -139,8 +139,8 @@ if api_key:
             "version": "2.0.0"
         }
 
-    # Mount the MCP app at /{api_key}/{api_key_hash} - it will handle /mcp internally
-    app.mount(f"/{api_key}/{api_key_hash}", mcp_app)
+    # Mount the MCP app at /mcp/{api_key}/{api_key_hash}
+    app.mount(f"/mcp/{api_key}/{api_key_hash}", mcp_app)
 
     # Add a custom 404 handler instead of catch-all route
     @app.exception_handler(404)
@@ -156,7 +156,7 @@ if api_key:
         import uvicorn
 
         logger.info("Starting MattasMCP remote server with dual-factor path authentication")
-        logger.info(f"MCP endpoint: http://{host}:{port}/{api_key}/{api_key_hash}/mcp")
+        logger.info(f"MCP endpoint: http://{host}:{port}/mcp/{api_key}/{api_key_hash}")
         logger.info(f"Health check (public): http://{host}:{port}/health")
         logger.info(f"API Key Hash: {api_key_hash}")
         logger.warning("Keep your API key secret and use HTTPS in production!")
@@ -187,7 +187,7 @@ else:
     # but we should avoid eager initialization
     if __name__ == "__main__":
         # Get configuration
-        port = int(os.getenv("PORT", "80"))
+        port = int(os.getenv("PORT", "8080"))
         host = os.getenv("HOST", "0.0.0.0")
 
         # Check configuration

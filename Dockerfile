@@ -53,15 +53,15 @@ USER mcp
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV HOST=0.0.0.0
-ENV PORT=80
+ENV PORT=8080
 
-# Expose port 80 for HTTP access
-EXPOSE 80
+# Expose port 8080 for HTTP access
+EXPOSE 8080
 
 # Lightweight health check that doesn't trigger service initialization
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:80/health').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
 
 # Run with uvloop and httptools for maximum performance
 # Single worker for scale-to-zero scenarios (less memory, faster startup)
-CMD ["python", "-m", "uvicorn", "server_remote:app", "--host", "0.0.0.0", "--port", "80", "--loop", "uvloop", "--http", "httptools", "--workers", "1", "--log-level", "warning", "--no-access-log"]
+CMD ["python", "-m", "uvicorn", "server_remote:app", "--host", "0.0.0.0", "--port", "8080", "--loop", "uvloop", "--http", "httptools", "--workers", "1", "--log-level", "warning", "--no-access-log"]

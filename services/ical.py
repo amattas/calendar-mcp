@@ -198,7 +198,7 @@ class MultiCalendarService:
         with self._lock:
             try:
                 logger.info(f"Fetching calendar '{feed.name}' from: {feed.url}")
-                response = requests.get(feed.url, timeout=30)
+                response = requests.get(feed.url, timeout=90)  # Increased timeout for slow feeds
                 response.raise_for_status()
                 
                 calendar = Calendar.from_ical(response.content)
