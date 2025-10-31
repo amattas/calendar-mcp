@@ -11,20 +11,13 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 - **iCalendar** (`services/ical.py`): Multi-calendar feed management with recurring event support
 - **Cache** (`services/cache.py`): Redis caching layer with cache-aside pattern
 
-### Deployment Modes
+### Deployment
 
-1. **stdio mode** (`server.py`): Local Claude Desktop integration
-2. **HTTP mode** (`server_remote.py`): Remote access via HTTP with dual-factor authentication
+**HTTP mode** (`server_remote.py`): HTTP API with dual-factor authentication
 
 ## Architecture
 
-### Entry Points
-
-**stdio Mode:**
-- File: `server.py`
-- Transport: stdin/stdout
-- Use: Claude Desktop local integration
-- Port: N/A
+### Entry Point
 
 **HTTP Mode:**
 - File: `server_remote.py`
@@ -118,11 +111,6 @@ def get_events_today() -> Dict[str, Any]:
 
 ### Running Locally
 
-**stdio mode:**
-```bash
-python server.py
-```
-
 **HTTP mode:**
 ```bash
 # Unauthenticated (development only)
@@ -157,14 +145,8 @@ pytest -m unit          # Unit tests only
 
 ### Docker
 
-**stdio mode:**
 ```bash
 docker-compose up --build
-```
-
-**HTTP mode:**
-```bash
-docker-compose -f docker-compose.http.yml up --build
 ```
 
 ## Testing Architecture
@@ -305,9 +287,9 @@ with self._lock:
     self.feeds[feed_id] = new_feed
 ```
 
-### 5. Docker Environment
+### 5. Docker Deployment
 
-Base `Dockerfile` only includes iCalendar support. The `server.py` entry point loads only calendar service. For full HTTP mode, use `Dockerfile.http` and `server_remote.py`.
+Single `Dockerfile` optimized for HTTP mode with lazy initialization for fast cold starts. See `OPTIMIZATION.md` for details.
 
 ## Server-Level Tools
 
@@ -517,8 +499,7 @@ if cache.is_connected():
 
 ```
 calendar-mcp/
-├── server.py                 # stdio mode entry point
-├── server_remote.py          # HTTP mode entry point
+├── server_remote.py          # HTTP API entry point
 ├── services/
 │   ├── __init__.py
 │   ├── ical.py              # Calendar service
@@ -530,10 +511,8 @@ calendar-mcp/
 ├── scripts/
 │   ├── verify_auth.py       # Calculate auth URLs
 │   └── get_mcp_url.sh       # Bash version
-├── Dockerfile               # stdio mode Docker
-├── Dockerfile.http          # HTTP mode Docker
-├── docker-compose.yml       # stdio mode compose
-├── docker-compose.http.yml  # HTTP mode compose
+├── Dockerfile               # HTTP mode (optimized)
+├── docker-compose.yml       # Docker compose config
 ├── .env.example             # Environment template
 └── requirements.txt         # Python dependencies
 ```
