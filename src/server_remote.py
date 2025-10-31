@@ -103,11 +103,8 @@ if api_key:
     # Middleware to lazy-initialize services on first real request
     class LazyInitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
-            # Log incoming requests for debugging
-            logger.info(f"Incoming request: {request.method} {request.url.path}")
-
             # Skip lazy init for health check (keeps it fast)
-            if request.url.path not in ["/app/health", "/app/debug"]:
+            if request.url.path != "/app/health":
                 lazy_initialize_services()
 
             return await call_next(request)
@@ -142,28 +139,13 @@ if api_key:
             "version": "2.0.0"
         }
 
-    # Debug endpoint to show expected paths (shows key prefix only for security)
-    @app.get("/app/debug")
-    async def debug_info():
-        """Debug endpoint showing expected configuration"""
-        return {
-            "expected_mcp_path": f"/app/{api_key[:8]}.../{api_key_hash[:8]}.../mcp",
-            "expected_health_path": "/app/health",
-            "api_key_prefix": api_key[:8] + "...",
-            "api_key_hash_prefix": api_key_hash[:8] + "...",
-            "full_api_key_hash": api_key_hash,
-            "version": "2.0.0"
-        }
-
     # Mount the MCP app at /app/{api_key}/{api_key_hash}
     # The MCP app has internal routes like /mcp, /sse, etc.
-    logger.info(f"Mounting MCP app at: /app/{api_key}/{api_key_hash}")
     app.mount(f"/app/{api_key}/{api_key_hash}", mcp_app)
 
     # Add a custom 404 handler instead of catch-all route
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: HTTPException):
-        logger.warning("Access attempt to undefined route")
         return JSONResponse(
             status_code=404,
             content={"detail": "Not Found"}
@@ -176,7 +158,6 @@ if api_key:
         logger.info("Starting MattasMCP remote server with dual-factor path authentication")
         logger.info(f"MCP endpoint: http://{host}:{port}/app/{api_key}/{api_key_hash}/mcp")
         logger.info(f"Health check (public): http://{host}:{port}/app/health")
-        logger.info(f"Debug endpoint (public): http://{host}:{port}/app/debug")
         logger.info(f"API Key Hash: {api_key_hash}")
         logger.warning("Keep your API key secret and use HTTPS in production!")
         logger.info("Services will initialize lazily on first MCP request")
