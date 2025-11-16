@@ -3,13 +3,13 @@
 import os
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime, date, timezone, timedelta
-from typing import Dict, List, Any, Optional
+from datetime import datetime, timezone, timedelta
 
 
 # ============================================================================
 # iCalendar Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_ical_data():
@@ -68,12 +68,13 @@ END:VCALENDAR"""
 @pytest.fixture
 def mock_ical_feeds():
     """Mock iCalendar feed URLs and responses"""
-    with patch('requests.get') as mock_get:
+    with patch("requests.get") as mock_get:
+
         def side_effect(url, *args, **kwargs):
             response = MagicMock()
             response.status_code = 200
-            
-            if 'personal' in url:
+
+            if "personal" in url:
                 response.text = """BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -83,7 +84,7 @@ DTEND:20240101T100000Z
 SUMMARY:Personal Event
 END:VEVENT
 END:VCALENDAR"""
-            elif 'work' in url:
+            elif "work" in url:
                 response.text = """BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -97,9 +98,9 @@ END:VCALENDAR"""
                 response.text = """BEGIN:VCALENDAR
 VERSION:2.0
 END:VCALENDAR"""
-            
+
             return response
-        
+
         mock_get.side_effect = side_effect
         yield mock_get
 
@@ -107,6 +108,7 @@ END:VCALENDAR"""
 # ============================================================================
 # Server/MCP Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_fastmcp():
@@ -122,9 +124,9 @@ def mock_fastmcp():
 def mock_env_vars():
     """Set up environment variables for testing"""
     env_vars = {
-        'ICAL_PERSONAL_URL': 'http://example.com/personal.ics',
-        'ICAL_WORK_URL': 'http://example.com/work.ics',
-        'MCP_API_KEY': 'test_mcp_key'
+        "ICAL_PERSONAL_URL": "http://example.com/personal.ics",
+        "ICAL_WORK_URL": "http://example.com/work.ics",
+        "MCP_API_KEY": "test_mcp_key",
     }
     with patch.dict(os.environ, env_vars):
         yield env_vars
@@ -133,6 +135,7 @@ def mock_env_vars():
 # ============================================================================
 # Async Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def async_mock():
@@ -144,17 +147,18 @@ def async_mock():
 # Test Data Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def test_dates():
     """Common test dates"""
     now = datetime.now(timezone.utc)
     return {
-        'today': now.date(),
-        'tomorrow': (now + timedelta(days=1)).date(),
-        'yesterday': (now - timedelta(days=1)).date(),
-        'next_week': (now + timedelta(days=7)).date(),
-        'last_week': (now - timedelta(days=7)).date(),
-        'now': now,
-        'one_hour_ago': now - timedelta(hours=1),
-        'one_hour_later': now + timedelta(hours=1)
+        "today": now.date(),
+        "tomorrow": (now + timedelta(days=1)).date(),
+        "yesterday": (now - timedelta(days=1)).date(),
+        "next_week": (now + timedelta(days=7)).date(),
+        "last_week": (now - timedelta(days=7)).date(),
+        "now": now,
+        "one_hour_ago": now - timedelta(hours=1),
+        "one_hour_later": now + timedelta(hours=1),
     }

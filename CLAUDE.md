@@ -111,9 +111,9 @@ All tests avoid real HTTP requests or live API tokens.
 
 When `MCP_API_KEY` is set:
 - **Dual-factor path**: `/app/{api_key}/{api_key_hash}/endpoint`
-- **MD5 hash calculation**:
-  - With salt: `hashlib.md5(f"{MD5_SALT}{api_key}".encode()).hexdigest()`
-  - Without salt (legacy): `hashlib.md5(api_key.encode()).hexdigest()`
+- **Hash calculation**:
+  - With salt: `hashlib.sha256(f"{MD5_SALT}{api_key}".encode()).hexdigest()`
+  - Without salt: `hashlib.sha256(api_key.encode()).hexdigest()`
 - **Endpoints**:
   - MCP: `/app/{key}/{hash}/mcp` (authenticated)
   - Health: `/app/health` (public, no auth)

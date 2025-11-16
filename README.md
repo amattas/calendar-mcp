@@ -129,7 +129,7 @@ import hashlib
 api_key = "your-api-key"
 md5_salt = "your-salt"  # Optional
 hash_input = f"{md5_salt}{api_key}" if md5_salt else api_key
-api_key_hash = hashlib.md5(hash_input.encode()).hexdigest()
+api_key_hash = hashlib.sha256(hash_input.encode()).hexdigest()
 print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 ```
 
@@ -156,7 +156,7 @@ print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 ### Security Benefits
 
 1. **Two-Factor Protection**: Requires both API key and hash
-2. **Hash Not Stored**: MD5 hash calculated at runtime
+2. **Hash Not Stored**: Hash calculated at runtime
 3. **Path Obfuscation**: Even with one factor, endpoint is inaccessible
 4. **No Token Exchange**: Stateless authentication
 

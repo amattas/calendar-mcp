@@ -1,0 +1,42 @@
+site_name: Calendar MCP
+site_description: MCP server for iCalendar feed management and event queries
+site_url: https://amattas.github.io/calendar-mcp/
+repo_url: https://github.com/amattas/calendar-mcp
+repo_name: amattas/calendar-mcp
+
+extra:
+  version:
+    provider: mike
+    default: latest
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            members_order: source
+            show_if_no_docstring: true
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_root_heading: true
+            show_root_full_path: false
+            filters:
+              - "!^_"
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - MCP Tools: tools.md

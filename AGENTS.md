@@ -208,7 +208,7 @@ def _register_mcp_tools(self, mcp_instance: FastMCP):
 **Dual-Factor Path Authentication:**
 
 When `MCP_API_KEY` is set:
-1. MD5 hash calculated on startup: `hashlib.md5(api_key.encode()).hexdigest()`
+1. Hash calculated on startup: `hashlib.sha256(api_key.encode()).hexdigest()`
 2. Endpoints mounted at: `/{api_key}/{api_key_hash}/endpoint`
 3. Security headers added via middleware
 4. Access logs disabled to prevent key leakage
