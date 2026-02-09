@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" width="120" alt="Calendar MCP logo">
+</p>
+
 # Calendar MCP Server
 
 A Model Context Protocol (MCP) server for iCalendar feed management and event queries. This server enables Claude Desktop and other MCP clients to interact with multiple calendar feeds for event tracking, conflict detection, and schedule management.
