@@ -1,0 +1,53 @@
+services:
+  calendar-mcp:
+    build: .
+    container_name: calendar-mcp
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # iCalendar Feed Configuration (JSON array)
+      # REQUIRED: At least one calendar feed must be configured
+      - ICAL_FEED_CONFIGS=${ICAL_FEED_CONFIGS:-[{"name":"Example","url":"https://example.com/calendar.ics"}]}
+      
+      # Timezone for calendar events and current time (IANA timezone name)
+      - TIMEZONE=${TIMEZONE:-UTC}
+      
+      # Refresh interval in minutes
+      - REFRESH_INTERVAL=${REFRESH_INTERVAL:-60}
+      
+      # Optional: Enable debug logging
+      - DEBUG=${DEBUG:-false}
+      
+      # Remote Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8080
+      
+      # SECURITY: It is highly recommended to set an API key for production
+      # When set, the endpoint will be: http://<host>:8080/app/<key>/<hash>/mcp
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - MD5_SALT=${MD5_SALT:-}
+      
+      # Redis Cache Configuration (Optional - uncomment redis service below to use)
+      # - REDIS_HOST=redis
+      # - REDIS_SSL_PORT=6379
+      
+    # depends_on:
+    #   - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/app/health').read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Optional Redis service for improved performance
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: calendar-mcp-redis
+  #   restart: always
+  #   volumes:
+  #     - redis-data:/data
+
+# volumes:
+#   redis-data:
