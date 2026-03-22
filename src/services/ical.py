@@ -1,6 +1,8 @@
 """Service for fetching and caching multiple named iCalendar feeds"""
 
 import logging
+import os
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Any
 from threading import Lock, Timer
@@ -67,6 +69,17 @@ class MultiCalendarService:
         self._refresh_timer: Optional[Timer] = None
         self.mcp = mcp
         self.cache = cache
+
+        # Get timezone configuration
+        self.timezone_str = os.getenv("TIMEZONE", "UTC")
+        try:
+            self.tz = ZoneInfo(self.timezone_str)
+        except Exception as e:
+            logger.warning(
+                f"Invalid timezone '{self.timezone_str}': {e}. Falling back to UTC."
+            )
+            self.tz = ZoneInfo("UTC")
+            self.timezone_str = "UTC"
 
         # Initialize feeds
         for config in feed_configs:
@@ -216,7 +229,7 @@ class MultiCalendarService:
 
                 calendar = Calendar.from_ical(response.content)
                 feed.calendar = calendar
-                feed.last_fetch = datetime.now(UTC)
+                feed.last_fetch = datetime.now(self.tz)
                 feed.error = None
 
                 event_count = sum(
@@ -493,7 +506,7 @@ class MultiCalendarService:
         if start_date:
             start_dt = self._normalize_datetime(start_date)
         else:
-            start_dt = datetime.now(UTC)
+            start_dt = datetime.now(self.tz)
 
         if end_date:
             end_dt = self._normalize_datetime(end_date)
@@ -562,12 +575,14 @@ class MultiCalendarService:
         self, feed_identifiers: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Get events for today from specified feeds or all feeds"""
-        today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow = today + timedelta(days=1)
+        # Calculate 'today' based on the configured local timezone
+        now_local = datetime.now(self.tz)
+        today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_start = today_start + timedelta(days=1)
 
         return self.get_events(
-            start_date=today.isoformat(),
-            end_date=tomorrow.isoformat(),
+            start_date=today_start.isoformat(),
+            end_date=tomorrow_start.isoformat(),
             feed_identifiers=feed_identifiers,
         )
 
@@ -575,7 +590,7 @@ class MultiCalendarService:
         self, count: int = 10, feed_identifiers: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Get upcoming events from specified feeds or all feeds"""
-        now = datetime.now(UTC)
+        now = datetime.now(self.tz)
         future_events = []
 
         feeds_to_query = []
@@ -1407,7 +1422,7 @@ Events matching the search query in:
 
     def get_week_events_resource(self) -> Dict[str, Any]:
         """Get all events for the current week"""
-        now = datetime.now(UTC)
+        now = datetime.now(self.tz)
         # Get start of week (Monday)
         start_of_week = now - timedelta(days=now.weekday())
         start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1427,7 +1442,7 @@ Events matching the search query in:
 
     def get_month_events_resource(self) -> Dict[str, Any]:
         """Get all events for the current month"""
-        now = datetime.now(UTC)
+        now = datetime.now(self.tz)
         # Get first day of month
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         # Get first day of next month
@@ -1450,7 +1465,7 @@ Events matching the search query in:
 
     def get_tomorrow_events_resource(self) -> Dict[str, Any]:
         """Get all events for tomorrow"""
-        today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now(self.tz).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
         day_after = tomorrow + timedelta(days=1)
 
@@ -1470,7 +1485,7 @@ Events matching the search query in:
         Args:
             include_all_day: Whether to include all-day events in conflict detection
         """
-        now = datetime.now(UTC)
+        now = datetime.now(self.tz)
         week_later = now + timedelta(days=7)
 
         events = self.get_events(
@@ -1552,7 +1567,7 @@ Events matching the search query in:
         Returns:
             Detailed conflict analysis with severity levels and statistics
         """
-        now = datetime.now(UTC)
+        now = datetime.now(self.tz)
         end_date = now + timedelta(days=days_ahead)
 
         events = self.get_events(
@@ -1622,7 +1637,7 @@ Events matching the search query in:
                 "start": now.isoformat(),
                 "end": end_date.isoformat(),
                 "days": days_ahead,
-                "timezone": "UTC",
+                "timezone": self.timezone_str,
             },
             "filters": {
                 "include_all_day": include_all_day,
