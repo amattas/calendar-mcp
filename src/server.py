@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-mcp = FastMCP(name="CalendarMCP", stateless_http=True)
+mcp = FastMCP(name="CalendarMCP")
 
 # Service instances (will be initialized on first use)
 _ical_service: Optional[MultiCalendarService] = None

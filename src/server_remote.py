@@ -92,8 +92,8 @@ class LazyInitMiddleware(BaseHTTPMiddleware):
 # Get the MCP server instance
 from .server import mcp
 
-# Get the MCP HTTP app
-mcp_app = mcp.http_app()
+# Get the MCP HTTP app with stateless mode enabled
+mcp_app = mcp.http_app(stateless_http=True)
 
 # Create FastAPI app with security settings and MCP lifespan
 app = FastAPI(
