@@ -336,11 +336,11 @@ class MultiCalendarService:
             if hasattr(value, "dt"):
                 dt = value.dt
                 if isinstance(dt, datetime):
-                    # Normalize to UTC before serializing
+                    # Convert to local timezone before serializing
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=UTC)
+                        dt = dt.replace(tzinfo=UTC).astimezone(self.tz)
                     else:
-                        dt = dt.astimezone(UTC)
+                        dt = dt.astimezone(self.tz)
                     return dt.isoformat()
                 else:
                     return dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
@@ -357,7 +357,7 @@ class MultiCalendarService:
                 if hasattr(dtstart, "dt"):
                     start_dt = dtstart.dt
                     if hasattr(duration, "dt"):
-                        # Normalize start time to UTC first
+                        # Normalize start time to UTC first for calculation
                         if isinstance(start_dt, datetime):
                             if start_dt.tzinfo is None:
                                 start_dt = start_dt.replace(tzinfo=UTC)
@@ -381,7 +381,7 @@ class MultiCalendarService:
                 if hasattr(dtstart, "dt"):
                     start_dt = dtstart.dt
                     if isinstance(start_dt, datetime):
-                        # Normalize start time to UTC first
+                        # Normalize start time to UTC first for calculation
                         if start_dt.tzinfo is None:
                             start_dt = start_dt.replace(tzinfo=UTC)
                         else:
