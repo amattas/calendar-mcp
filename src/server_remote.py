@@ -134,7 +134,7 @@ if api_key:
             return await call_next(request)
 
     # Get the MCP HTTP app without a path since we'll mount it at /mcp
-    mcp_app = mcp.http_app()
+    mcp_app = mcp.http_app(stateless_http=True)
 
     # Create FastAPI app with security settings and MCP lifespan
     app = FastAPI(
