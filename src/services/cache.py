@@ -1,15 +1,17 @@
 """Redis caching layer for MattasMCP services"""
 
-import os
-import json
 import hashlib
+import json
 import logging
+import os
 import time
-from typing import Any, Optional, Dict, Callable, TypeVar
-from functools import wraps
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import wraps
+from typing import Any, Optional, TypeVar
+
 import redis
-from redis import Redis, ConnectionPool, RedisError
+from redis import ConnectionPool, Redis, RedisError
 from redis.connection import SSLConnection
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ class CacheStats:
             return 0.0
         return (self.miss_time_sum / self.misses) * 1000
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert stats to dictionary"""
         return {
             "hits": self.hits,
@@ -102,9 +104,9 @@ class RedisCache:
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        password: Optional[str] = None,
+        host: str | None = None,
+        port: int | None = None,
+        password: str | None = None,
         use_ssl: bool = True,
         ssl_cert_reqs: str = "required",
         max_connections: int = 50,
@@ -151,10 +153,10 @@ class RedisCache:
 
         if use_ssl:
             pool_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
-            pool_kwargs["ssl_ca_certs"] = None  # Use system CA bundle
+            pool_kwargs["ssl_ca_certs"] = os.getenv("REDIS_CA_FILE")
 
         self.pool = ConnectionPool(**pool_kwargs)
-        self.client: Optional[Redis] = None
+        self.client: Redis | None = None
         self.stats = CacheStats()
         self._connected = False
 
@@ -260,7 +262,7 @@ class RedisCache:
         self,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
         nx: bool = False,
         xx: bool = False,
     ) -> bool:
@@ -386,7 +388,7 @@ class RedisCache:
         """Reset cache statistics"""
         self.stats.reset()
 
-    def info(self) -> Dict[str, Any]:
+    def info(self) -> dict[str, Any]:
         """Get Redis server info"""
         if not self.is_connected():
             return {}
@@ -442,9 +444,9 @@ def cache_key_generator(prefix: str, version: str = "v1", *args, **kwargs) -> st
 
 
 def cache_aside(
-    config: Optional[CacheConfig] = None,
-    cache_instance: Optional[RedisCache] = None,
-    key_func: Optional[Callable] = None,
+    config: CacheConfig | None = None,
+    cache_instance: RedisCache | None = None,
+    key_func: Callable | None = None,
 ):
     """
     Decorator for cache-aside pattern
@@ -521,9 +523,9 @@ def cache_aside(
 
 
 def _invalidate_cache(
-    cache_instance: Optional[RedisCache],
+    cache_instance: RedisCache | None,
     config: CacheConfig,
-    key_func: Optional[Callable],
+    key_func: Callable | None,
     func: Callable,
     *args,
     **kwargs,
