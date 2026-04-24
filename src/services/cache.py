@@ -151,7 +151,7 @@ class RedisCache:
 
         if use_ssl:
             pool_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
-            pool_kwargs["ssl_ca_certs"] = None  # Use system CA bundle
+            pool_kwargs["ssl_ca_certs"] = os.getenv("REDIS_CA_FILE")
 
         self.pool = ConnectionPool(**pool_kwargs)
         self.client: Optional[Redis] = None
