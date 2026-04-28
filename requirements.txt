@@ -1,23 +1,19 @@
 # Core MCP and FastMCP framework
-mcp>=1.0.0
-fastmcp>=2.11.0
+fastmcp>=2.14.0
 
 # Web framework dependencies
 fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
+uvicorn>=0.24.0
 starlette>=0.32.0
 pydantic>=2.0.0
-
-# Performance optimizations for uvicorn
-uvloop>=0.19.0
-httptools>=0.6.0
 
 # Calendar management
 icalendar>=5.0.0
 recurring-ical-events>=3.0.0
 
-# HTTP and networking
-requests>=2.33.0  # CVE: insecure temp file reuse in extract_zipped_paths
+# HTTP and networking (urllib3 pinned for security fix)
+urllib3>=2.6.0
+requests>=2.33.0  # pinned to override transitive version, CVE in extract_zipped_paths
 
 # Utilities
 python-dateutil>=2.8.0
@@ -27,5 +23,10 @@ python-dotenv>=1.0.0
 redis>=5.0.0
 hiredis>=2.3.0  # Optional C parser for better performance
 
-# Security: pin transitive dependency to fix GHSA-jj8c-mmj3-mmgv (CSRF in cache)
-authlib>=1.6.11
+# Performance optimizations for production
+uvloop>=0.19.0  # High-performance event loop for asyncio
+httptools>=0.6.0  # Fast HTTP parser
+
+# Type checking (development)
+mypy>=1.0.0
+types-redis>=4.6.0
