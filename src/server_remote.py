@@ -190,10 +190,14 @@ if api_key:
             "Starting MattasMCP remote server with dual-factor path authentication"
         )
         logger.info(
-            f"MCP endpoint: http://{host}:{port}/app/{api_key}/{api_key_hash}/mcp"
+            "MCP endpoint: http://%s:%s/app/%s/%s/mcp",
+            host,
+            port,
+            "[REDACTED]",
+            "[REDACTED]",
         )
         logger.info(f"Health check (public): http://{host}:{port}/app/health")
-        logger.info(f"API Key Hash: {api_key_hash}")
+        logger.info(f"API Key Hash: {api_key_hash[:8]}... (showing first 8 chars)")
         logger.warning("Keep your API key secret and use HTTPS in production!")
         logger.info("Services will initialize lazily on first MCP request")
 
