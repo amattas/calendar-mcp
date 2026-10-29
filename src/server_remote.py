@@ -66,6 +66,7 @@ if api_key:
     from fastapi.responses import Response
     from starlette.middleware.base import BaseHTTPMiddleware
     from .server import mcp
+    from ._version import __version__
 
     # Validate API key format (prevent path traversal attacks)
     if not api_key.replace("-", "").replace("_", "").isalnum():
@@ -164,7 +165,7 @@ if api_key:
         return {
             "status": "healthy",
             "initialized": _services_initialized,
-            "version": "2.0.0",
+            "version": __version__,
         }
 
     # Mount the MCP app at /app/{api_key}/{api_key_hash}

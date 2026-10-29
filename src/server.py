@@ -17,6 +17,7 @@ from fastmcp import FastMCP
 # Import our service modules
 from .services.ical import MultiCalendarService
 from .services.cache import RedisCache
+from ._version import __version__
 
 # Load environment variables with correct precedence
 config: Dict[str, str] = {}
@@ -48,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-mcp = FastMCP(name="CalendarMCP")
+mcp = FastMCP(name="CalendarMCP", version=__version__)
 
 # Service instances (will be initialized on first use)
 _ical_service: Optional[MultiCalendarService] = None
@@ -279,7 +280,7 @@ def get_current_datetime_tool() -> Dict[str, Any]:
 )
 def get_server_status() -> Dict[str, Any]:
     """Get the status of the calendar service"""
-    status = {"server": "CalendarMCP", "version": "1.0.0", "services": {}}
+    status = {"server": "CalendarMCP", "version": __version__, "services": {}}
 
     # Check iCalendar service
     ical_service = get_ical_service()
