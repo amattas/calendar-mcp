@@ -3,9 +3,9 @@
 Verify MCP authentication by calculating the correct endpoint URL
 """
 
-import sys
 import hashlib
 import os
+import sys
 
 
 def _mask(value: str, show: int = 4) -> str:
