@@ -1,10 +1,10 @@
 """Shared fixtures and configuration for tests"""
 
 import os
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ============================================================================
 # iCalendar Fixtures
@@ -151,7 +151,7 @@ def async_mock():
 @pytest.fixture
 def test_dates():
     """Common test dates"""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "today": now.date(),
         "tomorrow": (now + timedelta(days=1)).date(),

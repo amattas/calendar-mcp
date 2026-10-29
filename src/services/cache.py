@@ -470,10 +470,9 @@ def cache_aside(
         def wrapper(*args, **kwargs) -> T:
             # Get cache instance
             cache = cache_instance
-            if cache is None:
-                # Try to get from first argument if it has a cache attribute
-                if args and hasattr(args[0], "cache"):
-                    cache = args[0].cache
+            # Try to get from first argument if it has a cache attribute
+            if cache is None and args and hasattr(args[0], "cache"):
+                cache = args[0].cache
 
             # If no cache available, just call function
             if cache is None or not cache.is_connected():
@@ -532,9 +531,8 @@ def _invalidate_cache(
 ) -> bool:
     """Invalidate cache for specific function call"""
     cache = cache_instance
-    if cache is None:
-        if args and hasattr(args[0], "cache"):
-            cache = args[0].cache
+    if cache is None and args and hasattr(args[0], "cache"):
+        cache = args[0].cache
 
     if cache is None:
         return False

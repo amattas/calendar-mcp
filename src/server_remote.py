@@ -5,11 +5,12 @@ Supports both authenticated (path-based) and unauthenticated modes
 Optimized for scale-to-zero scenarios with lazy initialization
 """
 
+import asyncio
+import hashlib
+import logging
 import os
 import sys
-import logging
-import hashlib
-import asyncio
+
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -62,9 +63,10 @@ if api_key:
     # Use path-based authentication if API key is set
     logger.info("MCP_API_KEY is set - using path-based authentication")
 
-    from fastapi import FastAPI, Request, HTTPException
+    from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import Response
     from starlette.middleware.base import BaseHTTPMiddleware
+
     from .server import mcp
 
     # Validate API key format (prevent path traversal attacks)
