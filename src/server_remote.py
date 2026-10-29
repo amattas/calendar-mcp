@@ -31,26 +31,31 @@ md5_salt = os.getenv("MD5_SALT", "")
 
 # Track initialization state for lazy loading
 _services_initialized = False
+_init_lock = asyncio.Lock()
 
 
-def lazy_initialize_services():
+async def lazy_initialize_services():
     """
     Lazy initialization of services - called on first request instead of at startup.
-    This dramatically improves cold start time for scale-to-zero scenarios.
+    Runs the blocking calendar fetches in a thread so health probes stay responsive.
     """
     global _services_initialized
 
     if _services_initialized:
         return
 
-    logger.info("Lazy initializing services on first request...")
+    async with _init_lock:
+        if _services_initialized:
+            return
 
-    from .server import initialize_services
+        logger.info("Lazy initializing services on first request...")
 
-    initialize_services()
+        from .server import initialize_services
 
-    _services_initialized = True
-    logger.info("Services initialized successfully")
+        await asyncio.get_event_loop().run_in_executor(None, initialize_services)
+
+        _services_initialized = True
+        logger.info("Services initialized successfully")
 
 
 if api_key:
@@ -127,9 +132,8 @@ if api_key:
     # Middleware to lazy-initialize services on first real request
     class LazyInitMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):
-            # Skip lazy init for health check (keeps it fast)
             if request.url.path != "/app/health":
-                lazy_initialize_services()
+                await lazy_initialize_services()
 
             return await call_next(request)
 
