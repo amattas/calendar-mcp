@@ -4,22 +4,23 @@ Calendar MCP Server
 A specialized MCP server for iCalendar feed management and event queries
 """
 
-import os
 import logging
-from typing import Optional, Dict, Any
-from dotenv import dotenv_values
-from pathlib import Path
+import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
+from dotenv import dotenv_values
 from fastmcp import FastMCP
+
+from .services.cache import RedisCache
 
 # Import our service modules
 from .services.ical import MultiCalendarService
-from .services.cache import RedisCache
 
 # Load environment variables with correct precedence
-config: Dict[str, str] = {}
+config: dict[str, str] = {}
 
 # Load from project directory if available
 for filename in (".env", ".env.local"):
@@ -51,14 +52,12 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(name="CalendarMCP")
 
 # Service instances (will be initialized on first use)
-_ical_service: Optional[MultiCalendarService] = None
-_ical_service_config: Optional[str] = (
-    None  # Track the config used to create the service
-)
-_cache_service: Optional[RedisCache] = None
+_ical_service: MultiCalendarService | None = None
+_ical_service_config: str | None = None  # Track the config used to create the service
+_cache_service: RedisCache | None = None
 
 
-def get_ical_service() -> Optional[MultiCalendarService]:
+def get_ical_service() -> MultiCalendarService | None:
     """Get or initialize the iCalendar service"""
     global _ical_service, _ical_service_config
 
@@ -182,7 +181,7 @@ def get_ical_service() -> Optional[MultiCalendarService]:
     return _ical_service
 
 
-def get_cache_service() -> Optional[RedisCache]:
+def get_cache_service() -> RedisCache | None:
     """Get or initialize the Redis cache service"""
     global _cache_service
 
@@ -201,7 +200,7 @@ def get_cache_service() -> Optional[RedisCache]:
     return _cache_service
 
 
-def get_current_datetime() -> Dict[str, Any]:
+def get_current_datetime() -> dict[str, Any]:
     """Get the current date and time in the configured timezone"""
     # Get timezone from environment variable, default to UTC
     timezone_str = os.getenv("TIMEZONE", "UTC")
@@ -253,7 +252,7 @@ def get_current_datetime() -> Dict[str, Any]:
     title="Current Date & Time",
     annotations={"title": "Current Date & Time"},
 )
-def get_current_datetime_tool() -> Dict[str, Any]:
+def get_current_datetime_tool() -> dict[str, Any]:
     """MCP tool wrapper for get_current_datetime."""
     return get_current_datetime()
 
@@ -277,7 +276,7 @@ def get_current_datetime_tool() -> Dict[str, Any]:
     title="Server Status",
     annotations={"title": "Server Status"},
 )
-def get_server_status() -> Dict[str, Any]:
+def get_server_status() -> dict[str, Any]:
     """Get the status of the calendar service"""
     status = {"server": "CalendarMCP", "version": "1.0.0", "services": {}}
 
@@ -317,7 +316,7 @@ def get_server_status() -> Dict[str, Any]:
     title="Server Configuration",
     annotations={"title": "Server Configuration"},
 )
-def get_server_config() -> Dict[str, Any]:
+def get_server_config() -> dict[str, Any]:
     """Get the current server configuration (non-sensitive)"""
     return {
         "debug_mode": os.getenv("DEBUG", "false").lower() == "true",
@@ -351,7 +350,7 @@ def get_server_config() -> Dict[str, Any]:
     title="Cache Statistics",
     annotations={"title": "Cache Statistics"},
 )
-def get_cache_stats() -> Dict[str, Any]:
+def get_cache_stats() -> dict[str, Any]:
     """Get cache statistics"""
     cache = get_cache_service()
     if not cache:
@@ -381,7 +380,7 @@ def get_cache_stats() -> Dict[str, Any]:
     title="Clear Cache",
     annotations={"title": "Clear Cache"},
 )
-def clear_cache(pattern: Optional[str] = None) -> Dict[str, Any]:
+def clear_cache(pattern: str | None = None) -> dict[str, Any]:
     """Clear cache entries"""
     cache = get_cache_service()
     if not cache:
@@ -421,7 +420,7 @@ def clear_cache(pattern: Optional[str] = None) -> Dict[str, Any]:
     title="Cache Information",
     annotations={"title": "Cache Information"},
 )
-def get_cache_info() -> Dict[str, Any]:
+def get_cache_info() -> dict[str, Any]:
     """Get Redis server information"""
     cache = get_cache_service()
     if not cache:
@@ -460,7 +459,7 @@ def get_cache_info() -> Dict[str, Any]:
     title="Reset Cache Statistics",
     annotations={"title": "Reset Cache Statistics"},
 )
-def reset_cache_stats() -> Dict[str, Any]:
+def reset_cache_stats() -> dict[str, Any]:
     """Reset cache statistics"""
     cache = get_cache_service()
     if not cache:

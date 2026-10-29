@@ -16,8 +16,8 @@ import yaml  # type: ignore[import-untyped]
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import docs_versioning  # noqa: E402
-import publish_versioned_docs  # noqa: E402
+import docs_versioning
+import publish_versioned_docs
 
 MKDOCS_WITH_MIKE = "site_url: https://x/\nextra:\n  version:\n    provider: mike\n"
 
