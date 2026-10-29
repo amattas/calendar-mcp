@@ -1,0 +1,4 @@
+[lint]
+# BLE001: MCP tool handlers and service boundaries deliberately catch Exception,
+# log it, and return an error payload so one failing feed/tool call cannot crash the server.
+extend-ignore = ["BLE001"]

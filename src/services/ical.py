@@ -1,20 +1,22 @@
 """Service for fetching and caching multiple named iCalendar feeds"""
 
+import hashlib
 import logging
-from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Any
+from datetime import date, datetime, timedelta
 from threading import Lock, Timer
+from typing import TYPE_CHECKING, Any, Optional
+
+import recurring_ical_events
 import requests
-from icalendar import Calendar, Event
 from dateutil import parser as date_parser
 from dateutil.tz import UTC
-import hashlib
-import recurring_ical_events
-from typing import TYPE_CHECKING
-from .cache import cache_aside, CacheConfig, CacheTTL
+from icalendar import Calendar, Event
+
+from .cache import CacheConfig, CacheTTL, cache_aside
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
+
     from .cache import RedisCache
 
 logger = logging.getLogger(__name__)
@@ -23,14 +25,14 @@ logger = logging.getLogger(__name__)
 class CalendarFeed:
     """Represents a named calendar feed"""
 
-    def __init__(self, url: str, name: str = None):
+    def __init__(self, url: str, name: str | None = None):
         self.url = url
         self.name = name or self._generate_name_from_url(url)
         # MD5 used only for a short, stable identifier (not for security)
         self.id = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()[:8]
-        self.calendar: Optional[Calendar] = None
-        self.last_fetch: Optional[datetime] = None
-        self.error: Optional[str] = None
+        self.calendar: Calendar | None = None
+        self.last_fetch: datetime | None = None
+        self.error: str | None = None
 
     def _generate_name_from_url(self, url: str) -> str:
         """Generate a default name from URL"""
@@ -49,7 +51,7 @@ class MultiCalendarService:
 
     def __init__(
         self,
-        feed_configs: List[Dict[str, str]],
+        feed_configs: list[dict[str, str]],
         refresh_interval_minutes: int = 60,
         mcp: Optional["FastMCP"] = None,
         cache: Optional["RedisCache"] = None,
@@ -61,10 +63,10 @@ class MultiCalendarService:
             feed_configs: List of feed configurations with 'url' and optional 'name'
             refresh_interval_minutes: How often to refresh the cache (in minutes)
         """
-        self.feeds: Dict[str, CalendarFeed] = {}
+        self.feeds: dict[str, CalendarFeed] = {}
         self.refresh_interval = refresh_interval_minutes * 60  # Convert to seconds
         self._lock = Lock()
-        self._refresh_timer: Optional[Timer] = None
+        self._refresh_timer: Timer | None = None
         self.mcp = mcp
         self.cache = cache
 
@@ -101,11 +103,7 @@ class MultiCalendarService:
                 "  • Apple Calendar: Right-click calendar → Share Settings → Public Calendar"
             )
 
-        if not (
-            url.startswith("http://")
-            or url.startswith("https://")
-            or url.startswith("webcal://")
-        ):
+        if not (url.startswith(("http://", "https://", "webcal://"))):
             raise ValueError(
                 f"Invalid URL format: '{url}'.\n"
                 "Calendar URLs must start with http://, https://, or webcal://.\n"
@@ -115,7 +113,7 @@ class MultiCalendarService:
                 "  • https://outlook.live.com/owa/calendar/example.ics"
             )
 
-    def _validate_date_format(self, date_str: Optional[str], param_name: str) -> None:
+    def _validate_date_format(self, date_str: str | None, param_name: str) -> None:
         """Validate date format"""
         if date_str is not None:
             try:
@@ -165,11 +163,11 @@ class MultiCalendarService:
         finally:
             self._schedule_refresh()
 
-    def refresh_all_calendars(self) -> Dict[str, Any]:
+    def refresh_all_calendars(self) -> dict[str, Any]:
         """Fetch and cache all calendars from the feed URLs"""
         results = []
 
-        for feed_id, feed in self.feeds.items():
+        for feed in self.feeds.values():
             result = self._refresh_single_calendar(feed)
             results.append(result)
 
@@ -179,7 +177,7 @@ class MultiCalendarService:
             "results": results,
         }
 
-    def refresh_calendar(self, feed_identifier: Optional[str] = None) -> Dict[str, Any]:
+    def refresh_calendar(self, feed_identifier: str | None = None) -> dict[str, Any]:
         """Refresh a specific calendar or all calendars"""
         if feed_identifier:
             feed = self._find_feed(feed_identifier)
@@ -193,7 +191,7 @@ class MultiCalendarService:
         else:
             return self.refresh_all_calendars()
 
-    def _find_feed(self, identifier: str) -> Optional[CalendarFeed]:
+    def _find_feed(self, identifier: str) -> CalendarFeed | None:
         """Find a feed by URL, name, or ID"""
         if identifier in self.feeds:
             return self.feeds[identifier]
@@ -204,7 +202,7 @@ class MultiCalendarService:
 
         return None
 
-    def _refresh_single_calendar(self, feed: CalendarFeed) -> Dict[str, Any]:
+    def _refresh_single_calendar(self, feed: CalendarFeed) -> dict[str, Any]:
         """Refresh a single calendar"""
         with self._lock:
             try:
@@ -277,7 +275,7 @@ class MultiCalendarService:
                         "  • Restart the server after updating configuration"
                     )
                 else:
-                    error_msg = f"HTTP error {e.response.status_code} for calendar '{feed.name}': {str(e)}"
+                    error_msg = f"HTTP error {e.response.status_code} for calendar '{feed.name}': {e!s}"
 
                 logger.error(f"HTTP error fetching feed '{feed.name}': {e}")
                 feed.error = str(e)
@@ -293,7 +291,7 @@ class MultiCalendarService:
                 }
             except Exception as e:
                 error_msg = (
-                    f"Failed to fetch calendar '{feed.name}': {str(e)}\n"
+                    f"Failed to fetch calendar '{feed.name}': {e!s}\n"
                     "To diagnose:\n"
                     "  • Use `list_calendar_feeds` to check feed status\n"
                     "  • Try removing and re-adding the feed\n"
@@ -314,7 +312,7 @@ class MultiCalendarService:
                     ),
                 }
 
-    def _event_to_dict(self, event: Event, feed: CalendarFeed) -> Dict[str, Any]:
+    def _event_to_dict(self, event: Event, feed: CalendarFeed) -> dict[str, Any]:
         """Convert an iCalendar event to a dictionary with feed information"""
 
         def safe_str(value):
@@ -407,9 +405,8 @@ class MultiCalendarService:
         }
 
         # Check if it's an all-day event
-        if dtstart and hasattr(dtstart, "dt"):
-            if not isinstance(dtstart.dt, datetime):
-                event_dict["all_day"] = True
+        if dtstart and hasattr(dtstart, "dt") and not isinstance(dtstart.dt, datetime):
+            event_dict["all_day"] = True
 
         # Handle attendees
         attendees = event.get("ATTENDEE", [])
@@ -429,7 +426,7 @@ class MultiCalendarService:
 
         return event_dict
 
-    def _normalize_datetime(self, dt) -> Optional[datetime]:
+    def _normalize_datetime(self, dt) -> datetime | None:
         """Normalize various date/datetime formats to UTC datetime"""
         if dt is None:
             return None
@@ -464,12 +461,12 @@ class MultiCalendarService:
     @cache_aside(CacheConfig(ttl=CacheTTL.CALENDAR_EVENTS, key_prefix="ical:events"))
     def get_events(
         self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        feed_identifiers: Optional[List[str]] = None,
-        limit: Optional[int] = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        feed_identifiers: list[str] | None = None,
+        limit: int | None = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get events within a date range from specified feeds or all feeds, expanding recurring events
 
         Args:
@@ -559,8 +556,8 @@ class MultiCalendarService:
         return events
 
     def get_today_events(
-        self, feed_identifiers: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+        self, feed_identifiers: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Get events for today from specified feeds or all feeds"""
         today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
@@ -572,8 +569,8 @@ class MultiCalendarService:
         )
 
     def get_upcoming_events(
-        self, count: int = 10, feed_identifiers: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+        self, count: int = 10, feed_identifiers: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Get upcoming events from specified feeds or all feeds"""
         now = datetime.now(UTC)
         future_events = []
@@ -607,8 +604,8 @@ class MultiCalendarService:
 
     @cache_aside(CacheConfig(ttl=CacheTTL.CALENDAR_EVENTS, key_prefix="ical:search"))
     def search_events(
-        self, query: str, feed_identifiers: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, feed_identifiers: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         """Search events by title, description, location, or feed name"""
         if not query:
             return []
@@ -678,8 +675,8 @@ class MultiCalendarService:
         return matching_events
 
     def get_event_by_uid(
-        self, uid: str, feed_identifier: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+        self, uid: str, feed_identifier: str | None = None
+    ) -> dict[str, Any] | None:
         """Get a specific event by its UID"""
         feeds_to_query = []
         if feed_identifier:
@@ -695,19 +692,21 @@ class MultiCalendarService:
                     continue
 
                 for component in feed.calendar.walk():
-                    if component.name == "VEVENT":
-                        if str(component.get("UID", "")) == uid:
-                            return self._event_to_dict(component, feed)
+                    if (
+                        component.name == "VEVENT"
+                        and str(component.get("UID", "")) == uid
+                    ):
+                        return self._event_to_dict(component, feed)
 
         return None
 
     @cache_aside(CacheConfig(ttl=CacheTTL.CALENDAR_INFO, key_prefix="ical:info"))
-    def get_calendar_info(self) -> Dict[str, Any]:
+    def get_calendar_info(self) -> dict[str, Any]:
         """Get information about all cached calendars"""
         info = {"status": "loaded", "total_feeds": len(self.feeds), "feeds": []}
 
         with self._lock:
-            for feed_id, feed in self.feeds.items():
+            for feed in self.feeds.values():
                 if feed.calendar:
                     event_count = sum(
                         1 for comp in feed.calendar.walk() if comp.name == "VEVENT"
@@ -762,7 +761,7 @@ class MultiCalendarService:
 
         return info
 
-    def list_feeds(self) -> List[Dict[str, str]]:
+    def list_feeds(self) -> list[dict[str, str]]:
         """List all configured feeds with their names and IDs"""
         feeds_list = []
         for feed in self.feeds.values():
@@ -1174,10 +1173,10 @@ Events matching the search query in:
     # MCP Tool Methods
     def get_events_for_mcp(
         self,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        calendar_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        start_date: str | None = None,
+        end_date: str | None = None,
+        calendar_name: str | None = None,
+    ) -> dict[str, Any]:
         """MCP tool wrapper for get_events"""
         try:
             # Parse dates
@@ -1203,7 +1202,7 @@ Events matching the search query in:
             logger.error(f"Error getting events: {e}")
             return {"error": str(e)}
 
-    def refresh_feeds_for_mcp(self) -> Dict[str, Any]:
+    def refresh_feeds_for_mcp(self) -> dict[str, Any]:
         """MCP tool wrapper for refresh_all_calendars"""
         try:
             self.refresh_all_calendars()
@@ -1217,7 +1216,7 @@ Events matching the search query in:
             logger.error(f"Error refreshing feeds: {e}")
             return {"error": str(e)}
 
-    def list_feeds_for_mcp(self) -> Dict[str, Any]:
+    def list_feeds_for_mcp(self) -> dict[str, Any]:
         """MCP tool wrapper for get_calendar_info"""
         try:
             info = self.get_calendar_info()
@@ -1227,21 +1226,21 @@ Events matching the search query in:
             return {"error": str(e)}
 
     # Resource Methods
-    def get_calendar_info_resource(self) -> Dict[str, Any]:
+    def get_calendar_info_resource(self) -> dict[str, Any]:
         """Resource providing calendar information"""
         return self.get_calendar_info()
 
-    def get_today_events_resource(self) -> List[Dict[str, Any]]:
+    def get_today_events_resource(self) -> list[dict[str, Any]]:
         """Resource providing today's events"""
         return self.get_today_events()
 
-    def get_upcoming_events_resource(self) -> List[Dict[str, Any]]:
+    def get_upcoming_events_resource(self) -> list[dict[str, Any]]:
         """Resource providing upcoming events"""
         return self.get_upcoming_events(count=20)
 
     def get_events_on_date_resource(
-        self, date: str, feed: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, date: str, feed: str | None = None
+    ) -> dict[str, Any]:
         """Resource providing events on a specific date, optionally filtered by feed"""
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
@@ -1261,8 +1260,8 @@ Events matching the search query in:
             return {"error": str(e), "date": date}
 
     def get_events_between_resource(
-        self, start_date: str, end_date: str, feed: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, start_date: str, end_date: str, feed: str | None = None
+    ) -> dict[str, Any]:
         """Resource providing events between two dates, optionally filtered by feed"""
         try:
             start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
@@ -1289,8 +1288,8 @@ Events matching the search query in:
             return {"error": str(e), "start_date": start_date, "end_date": end_date}
 
     def get_events_after_resource(
-        self, date: str, feed: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, date: str, feed: str | None = None
+    ) -> dict[str, Any]:
         """Resource providing events after a specific date, optionally filtered by feed"""
         try:
             start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
@@ -1316,8 +1315,8 @@ Events matching the search query in:
             return {"error": str(e), "after_date": date}
 
     def search_events_resource(
-        self, query: str, feed: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, query: str, feed: str | None = None
+    ) -> dict[str, Any]:
         """Resource for searching calendar events, optionally filtered by feed"""
         try:
             feed_identifiers = [feed] if feed else None
@@ -1336,7 +1335,7 @@ Events matching the search query in:
         include_all_day: str = "false",
         min_overlap_minutes: str = "0",
         severity_threshold: str = "all",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """MCP wrapper for analyze_calendar_conflicts with string to type conversion"""
         try:
             # Convert string parameters to appropriate types
@@ -1381,7 +1380,7 @@ Events matching the search query in:
             logger.error(f"Error analyzing conflicts: {e}")
             return {"error": str(e)}
 
-    def get_feeds_list_resource(self) -> Dict[str, Any]:
+    def get_feeds_list_resource(self) -> dict[str, Any]:
         """Resource providing list of configured calendar feeds"""
         feeds_list = []
         for feed_id, feed in self.feeds.items():
@@ -1405,7 +1404,7 @@ Events matching the search query in:
             "usage": "Use feed name in ical://feed/{feed_name}/events to get events from a specific feed",
         }
 
-    def get_week_events_resource(self) -> Dict[str, Any]:
+    def get_week_events_resource(self) -> dict[str, Any]:
         """Get all events for the current week"""
         now = datetime.now(UTC)
         # Get start of week (Monday)
@@ -1425,7 +1424,7 @@ Events matching the search query in:
             "events_count": len(events),
         }
 
-    def get_month_events_resource(self) -> Dict[str, Any]:
+    def get_month_events_resource(self) -> dict[str, Any]:
         """Get all events for the current month"""
         now = datetime.now(UTC)
         # Get first day of month
@@ -1448,7 +1447,7 @@ Events matching the search query in:
             "events_count": len(events),
         }
 
-    def get_tomorrow_events_resource(self) -> Dict[str, Any]:
+    def get_tomorrow_events_resource(self) -> dict[str, Any]:
         """Get all events for tomorrow"""
         today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
@@ -1464,7 +1463,7 @@ Events matching the search query in:
             "events_count": len(events),
         }
 
-    def get_conflicts_resource(self, include_all_day: bool = False) -> Dict[str, Any]:
+    def get_conflicts_resource(self, include_all_day: bool = False) -> dict[str, Any]:
         """Find overlapping events in the next 7 days
 
         Args:
@@ -1500,30 +1499,36 @@ Events matching the search query in:
                 start2 = self._normalize_datetime(event2.get("start"))
                 end2 = self._normalize_datetime(event2.get("end"))
 
-                if start1 and end1 and start2 and end2:
-                    # Check for overlap
-                    if start1 < end2 and end1 > start2:
-                        conflicts.append(
-                            {
-                                "event1": {
-                                    "summary": event1.get("summary"),
-                                    "start": event1.get("start"),
-                                    "end": event1.get("end"),
-                                    "all_day": is_all_day1,
-                                },
-                                "event2": {
-                                    "summary": event2.get("summary"),
-                                    "start": event2.get("start"),
-                                    "end": event2.get("end"),
-                                    "all_day": is_all_day2,
-                                },
-                                "conflict_type": (
-                                    "all_day_overlap"
-                                    if (is_all_day1 or is_all_day2)
-                                    else "time_overlap"
-                                ),
-                            }
-                        )
+                # Check for overlap
+                if (
+                    start1
+                    and end1
+                    and start2
+                    and end2
+                    and start1 < end2
+                    and end1 > start2
+                ):
+                    conflicts.append(
+                        {
+                            "event1": {
+                                "summary": event1.get("summary"),
+                                "start": event1.get("start"),
+                                "end": event1.get("end"),
+                                "all_day": is_all_day1,
+                            },
+                            "event2": {
+                                "summary": event2.get("summary"),
+                                "start": event2.get("start"),
+                                "end": event2.get("end"),
+                                "all_day": is_all_day2,
+                            },
+                            "conflict_type": (
+                                "all_day_overlap"
+                                if (is_all_day1 or is_all_day2)
+                                else "time_overlap"
+                            ),
+                        }
+                    )
 
         return {
             "period": f"{now.date().isoformat()} to {week_later.date().isoformat()}",
@@ -1539,7 +1544,7 @@ Events matching the search query in:
         include_all_day: bool = False,
         min_overlap_minutes: int = 0,
         severity_threshold: str = "all",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Analyze calendar conflicts with detailed filtering and severity levels
 
@@ -1608,8 +1613,8 @@ Events matching the search query in:
         stats = {
             "total_events": len(events),
             "events_with_conflicts": len(
-                set(c["event1"]["id"] for c in conflicts).union(
-                    set(c["event2"]["id"] for c in conflicts)
+                {c["event1"]["id"] for c in conflicts}.union(
+                    {c["event2"]["id"] for c in conflicts}
                 )
             ),
             "conflict_percentage": (
@@ -1644,8 +1649,8 @@ Events matching the search query in:
         }
 
     def _analyze_event_overlap(
-        self, event1: Dict, event2: Dict, is_all_day1: bool, is_all_day2: bool
-    ) -> Optional[Dict]:
+        self, event1: dict, event2: dict, is_all_day1: bool, is_all_day2: bool
+    ) -> dict | None:
         """Analyze overlap between two events and return conflict details"""
         start1 = self._normalize_datetime(event1.get("start"))
         end1 = self._normalize_datetime(event1.get("end"))
@@ -1707,7 +1712,7 @@ Events matching the search query in:
         }
 
     def _determine_conflict_severity(
-        self, conflict_info: Dict, event1: Dict, event2: Dict
+        self, conflict_info: dict, event1: dict, event2: dict
     ) -> str:
         """Determine the severity level of a conflict"""
         overlap_minutes = conflict_info["overlap_minutes"]
@@ -1748,8 +1753,8 @@ Events matching the search query in:
         return conflict_level >= threshold_level
 
     def _generate_conflict_recommendations(
-        self, conflicts_by_severity: Dict
-    ) -> List[str]:
+        self, conflicts_by_severity: dict
+    ) -> list[str]:
         """Generate recommendations based on conflict analysis"""
         recommendations = []
 
@@ -1789,7 +1794,7 @@ Events matching the search query in:
 
         return recommendations
 
-    def _is_all_day_event(self, event: Dict[str, Any]) -> bool:
+    def _is_all_day_event(self, event: dict[str, Any]) -> bool:
         """Check if an event is an all-day event"""
         # Check if the event has no time component (just date)
         start = event.get("start", "")
@@ -1808,14 +1813,14 @@ Events matching the search query in:
             end_dt = self._normalize_datetime(end)
             if start_dt and end_dt:
                 duration = end_dt - start_dt
-                # Check if duration is exactly 1 or more days
+                # Check if duration is exactly 1 or more days and starts at midnight
                 if (
                     duration.total_seconds() % 86400 == 0
                     and duration.total_seconds() >= 86400
+                    and start_dt.hour == 0
+                    and start_dt.minute == 0
                 ):
-                    # And starts at midnight
-                    if start_dt.hour == 0 and start_dt.minute == 0:
-                        return True
+                    return True
         except Exception as exc:
             logger.debug(
                 "Failed to evaluate all-day event duration for event %r: %s",
