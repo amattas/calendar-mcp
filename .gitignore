@@ -181,3 +181,14 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 claude_desktop_config.json.example
+
+# Local tooling / AI
+.DS_Store
+*.bak
+.env.*
+!.env.example
+.claude/settings.local.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.superpowers/
+.playwright-mcp/
