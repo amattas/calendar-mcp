@@ -122,9 +122,9 @@ MCP_API_KEY=test-key python server_remote.py
 
 ### Testing
 
-**Run all tests:**
+**Run all tests (coverage floor from pyproject.toml):**
 ```bash
-./run_tests.sh
+python -m pytest -q
 ```
 
 **Run specific test file:**
@@ -489,7 +489,7 @@ if cache.is_connected():
 
 ### Update Dependencies
 
-1. Update `requirements.txt`
+1. Update `[project].dependencies` (runtime) or the `dev` extra in `pyproject.toml`
 2. Rebuild Docker image
 3. Run full test suite
 4. Test in Docker container
@@ -514,7 +514,7 @@ calendar-mcp/
 ├── Dockerfile               # HTTP mode (optimized)
 ├── docker-compose.yml       # Docker compose config
 ├── .env.example             # Environment template
-└── requirements.txt         # Python dependencies
+└── pyproject.toml           # Metadata, dependencies, tool config
 ```
 
 ## Useful References

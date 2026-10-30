@@ -1,3 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "calendar-mcp"
 version = "2.0.1"
+description = "MCP server for iCalendar feed management and event queries"
+requires-python = ">=3.14"
+dependencies = [
+    # Core MCP and FastMCP framework
+    "fastmcp>=2.14.0",
+    # Web framework
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "starlette>=0.32.0",
+    "pydantic>=2.0.0",
+    # Calendar management
+    "icalendar>=5.0.0",
+    "recurring-ical-events>=3.0.0",
+    # HTTP and networking (floors carry security fixes)
+    "urllib3>=2.6.0",
+    "requests>=2.33.0", # CVE in extract_zipped_paths
+    # Utilities
+    "python-dateutil>=2.8.0",
+    "python-dotenv>=1.0.0",
+    # Caching (hiredis: optional C parser)
+    "redis>=5.0.0",
+    "hiredis>=2.3.0",
+    # Production event loop and HTTP parser (uvicorn --loop uvloop --http httptools)
+    "uvloop>=0.19.0",
+    "httptools>=0.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.2",
+    "mypy==2.3.0",
+    "bandit==1.9.4",
+    "types-requests==2.33.0.20261006",
+    "types-python-dateutil==2.9.0.20261021",
+    # tests/docs exercise scripts/publish_versioned_docs.py, which reads mkdocs YAML
+    "pyyaml==6.0.3",
+]
+
+# The import package is `src` (the image runs `uvicorn src.server_remote:app`).
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --cov --cov-report=term-missing:skip-covered"
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 29
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
+
+[tool.mypy]
+python_version = "3.14"
+files = ["src"]
+strict = true
+warn_unreachable = true

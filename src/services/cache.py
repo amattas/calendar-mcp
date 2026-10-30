@@ -8,15 +8,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Optional, TypeVar
+from typing import Any, cast
 
 import redis
 from redis import ConnectionPool, Redis, RedisError
 from redis.connection import SSLConnection
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 @dataclass
@@ -73,7 +71,7 @@ class CacheStats:
             "uptime_seconds": time.time() - self.last_reset,
         }
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all statistics"""
         self.hits = 0
         self.misses = 0
@@ -131,7 +129,7 @@ class RedisCache:
             health_check_interval: Health check interval in seconds
         """
         self.host = host or os.getenv("REDIS_HOST")
-        self.port = int(port or os.getenv("REDIS_SSL_PORT", "6380"))
+        self.port = port or int(os.getenv("REDIS_SSL_PORT", "6380"))
         self.password = password or os.getenv("REDIS_KEY")
         self.use_ssl = use_ssl
 
@@ -139,7 +137,7 @@ class RedisCache:
             raise ValueError("Redis host is required (set REDIS_HOST env var)")
 
         # Create connection pool with SSL support
-        pool_kwargs = {
+        pool_kwargs: dict[str, Any] = {
             "host": self.host,
             "port": self.port,
             "password": self.password,
@@ -180,7 +178,7 @@ class RedisCache:
             return False
 
     @classmethod
-    def from_env(cls) -> Optional["RedisCache"]:
+    def from_env(cls) -> RedisCache | None:
         """Create RedisCache from environment variables"""
         try:
             return cls()
@@ -196,9 +194,15 @@ class RedisCache:
         try:
             self.client.ping()
             return True
-        except (RedisError, Exception):
+        except Exception:
             self._connected = False
             return False
+
+    def _live_client(self) -> Redis | None:
+        """Return the client when Redis is connected and responsive, else None"""
+        if not self.is_connected():
+            return None
+        return self.client
 
     def _generate_key(self, key: str, prefix: str = "", version: str = "v1") -> str:
         """Generate cache key with prefix and version"""
@@ -216,11 +220,11 @@ class RedisCache:
             return b""
         return json.dumps(value, default=str).encode("utf-8")
 
-    def _deserialize(self, data: bytes) -> Any:
+    def _deserialize(self, data: bytes | str) -> Any:
         """Deserialize value from storage"""
         if not data:
             return None
-        return json.loads(data.decode("utf-8"))
+        return json.loads(data)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -233,7 +237,8 @@ class RedisCache:
         Returns:
             Cached value or default
         """
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             self.stats.errors += 1
             return default
 
@@ -241,7 +246,7 @@ class RedisCache:
         start_time = time.time()
 
         try:
-            data = self.client.get(key)
+            data = client.get(key)
             elapsed = time.time() - start_time
 
             if data is not None:
@@ -279,21 +284,13 @@ class RedisCache:
         Returns:
             True if successful, False otherwise
         """
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return False
 
         try:
             serialized = self._serialize(value)
-
-            kwargs = {}
-            if ttl is not None:
-                kwargs["ex"] = ttl
-            if nx:
-                kwargs["nx"] = True
-            if xx:
-                kwargs["xx"] = True
-
-            result = self.client.set(key, serialized, **kwargs)
+            result = client.set(key, serialized, ex=ttl, nx=nx, xx=xx)
             return bool(result)
 
         except (RedisError, Exception) as e:
@@ -303,11 +300,12 @@ class RedisCache:
 
     def delete(self, key: str) -> bool:
         """Delete key from cache"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return False
 
         try:
-            result = self.client.delete(key)
+            result = client.delete(key)
             return bool(result)
         except (RedisError, Exception) as e:
             logger.error(f"Cache delete error for key {key}: {e}")
@@ -323,14 +321,15 @@ class RedisCache:
         Returns:
             Number of keys deleted
         """
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return 0
 
         try:
             # Use SCAN to avoid blocking on large keyspaces
             deleted = 0
-            for key in self.client.scan_iter(match=pattern, count=100):
-                if self.client.delete(key):
+            for key in client.scan_iter(match=pattern, count=100):
+                if client.delete(key):
                     deleted += 1
             return deleted
 
@@ -340,41 +339,45 @@ class RedisCache:
 
     def exists(self, key: str) -> bool:
         """Check if key exists in cache"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return False
 
         try:
-            return bool(self.client.exists(key))
-        except (RedisError, Exception):
+            return bool(client.exists(key))
+        except Exception:
             return False
 
     def expire(self, key: str, ttl: int) -> bool:
         """Set expiration time for key"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return False
 
         try:
-            return bool(self.client.expire(key, ttl))
-        except (RedisError, Exception):
+            return bool(client.expire(key, ttl))
+        except Exception:
             return False
 
     def ttl(self, key: str) -> int:
         """Get remaining TTL for key in seconds"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return -2  # Key doesn't exist
 
         try:
-            return self.client.ttl(key)
-        except (RedisError, Exception):
+            return int(client.ttl(key))
+        except Exception:
             return -2
 
     def flush_all(self) -> bool:
         """Flush all keys (use with caution!)"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return False
 
         try:
-            self.client.flushall()
+            client.flushall()
             return True
         except (RedisError, Exception) as e:
             logger.error(f"Cache flush error: {e}")
@@ -384,21 +387,22 @@ class RedisCache:
         """Get cache statistics"""
         return self.stats
 
-    def reset_stats(self):
+    def reset_stats(self) -> None:
         """Reset cache statistics"""
         self.stats.reset()
 
     def info(self) -> dict[str, Any]:
         """Get Redis server info"""
-        if not self.is_connected():
+        client = self._live_client()
+        if client is None:
             return {}
 
         try:
-            return self.client.info()
-        except (RedisError, Exception):
+            return dict(client.info())
+        except Exception:
             return {}
 
-    def close(self):
+    def close(self) -> None:
         """Close Redis connection"""
         if self.client:
             self.client.close()
@@ -407,7 +411,9 @@ class RedisCache:
         self._connected = False
 
 
-def cache_key_generator(prefix: str, version: str = "v1", *args, **kwargs) -> str:
+def cache_key_generator(
+    prefix: str, version: str = "v1", *args: Any, **kwargs: Any
+) -> str:
     """
     Generate cache key from function arguments
 
@@ -443,11 +449,11 @@ def cache_key_generator(prefix: str, version: str = "v1", *args, **kwargs) -> st
     return ":".join(parts)
 
 
-def cache_aside(
+def cache_aside[**P, T](
     config: CacheConfig | None = None,
     cache_instance: RedisCache | None = None,
-    key_func: Callable | None = None,
-):
+    key_func: Callable[..., str] | None = None,
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Decorator for cache-aside pattern
 
@@ -462,12 +468,11 @@ def cache_aside(
             # Expensive API call
             return api.get_events(calendar_id)
     """
-    if config is None:
-        config = CacheConfig()
+    cfg = config if config is not None else CacheConfig()
 
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
-        def wrapper(*args, **kwargs) -> T:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             # Get cache instance
             cache = cache_instance
             # Try to get from first argument if it has a cache attribute
@@ -485,8 +490,8 @@ def cache_aside(
                 # Skip 'self' argument for instance methods
                 key_args = args[1:] if args and hasattr(args[0], "__class__") else args
                 cache_key = cache_key_generator(
-                    config.key_prefix or func.__name__,
-                    config.version,
+                    cfg.key_prefix or func.__name__,
+                    cfg.version,
                     *key_args,
                     **kwargs,
                 )
@@ -499,7 +504,7 @@ def cache_aside(
                 logger.debug(
                     f"Cache hit for {cache_key} ({time.time() - start_time:.3f}s)"
                 )
-                return cached_value
+                return cast(T, cached_value)
 
             # Cache miss - call function
             logger.debug(f"Cache miss for {cache_key}")
@@ -507,14 +512,17 @@ def cache_aside(
 
             # Store in cache
             if result is not None:
-                cache.set(cache_key, result, ttl=config.get_ttl_seconds())
+                cache.set(cache_key, result, ttl=cfg.get_ttl_seconds())
 
             return result
 
         # Add cache management methods to wrapper
-        wrapper.invalidate = lambda *args, **kwargs: _invalidate_cache(
-            cache_instance, config, key_func, func, *args, **kwargs
-        )
+        def invalidate(*args: Any, **kwargs: Any) -> bool:
+            return _invalidate_cache(
+                cache_instance, cfg, key_func, func, *args, **kwargs
+            )
+
+        setattr(wrapper, "invalidate", invalidate)  # noqa: B010 - mypy rejects new attributes on a function
 
         return wrapper
 
@@ -524,10 +532,10 @@ def cache_aside(
 def _invalidate_cache(
     cache_instance: RedisCache | None,
     config: CacheConfig,
-    key_func: Callable | None,
-    func: Callable,
-    *args,
-    **kwargs,
+    key_func: Callable[..., str] | None,
+    func: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
 ) -> bool:
     """Invalidate cache for specific function call"""
     cache = cache_instance

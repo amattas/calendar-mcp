@@ -36,7 +36,7 @@ Key endpoints:
 2. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
 3. Set environment variables (at minimum `ICAL_FEED_CONFIGS`):
