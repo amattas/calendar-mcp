@@ -261,9 +261,7 @@ class TestMultiCalendarService:
 
             event = Event()
             event.add("summary", f"{name} Event")
-            event.add(
-                "dtstart", datetime(2024, 1, i + 1, 10, 0, 0, tzinfo=UTC)
-            )
+            event.add("dtstart", datetime(2024, 1, i + 1, 10, 0, 0, tzinfo=UTC))
             event.add("dtend", datetime(2024, 1, i + 1, 11, 0, 0, tzinfo=UTC))
             event.add("uid", f"{name.lower()}-event@example.com")
             cal.add_component(event)
@@ -304,7 +302,7 @@ class TestMultiCalendarService:
             event.add("summary", title)
             event.add("dtstart", datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC))
             event.add("dtend", datetime(2024, 1, 1, 11, 0, 0, tzinfo=UTC))
-            event.add("uid", f'{title.replace(" ", "-")}@example.com')
+            event.add("uid", f"{title.replace(' ', '-')}@example.com")
             cal.add_component(event)
 
         feed.calendar = cal
@@ -332,9 +330,7 @@ class TestMultiCalendarService:
         for i in range(10):
             event = Event()
             event.add("summary", f"Event {i}")
-            event.add(
-                "dtstart", datetime(2024, 1, i + 1, 10, 0, 0, tzinfo=UTC)
-            )
+            event.add("dtstart", datetime(2024, 1, i + 1, 10, 0, 0, tzinfo=UTC))
             event.add("dtend", datetime(2024, 1, i + 1, 11, 0, 0, tzinfo=UTC))
             event.add("uid", f"event-{i}@example.com")
             cal.add_component(event)
