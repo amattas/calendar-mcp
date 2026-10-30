@@ -835,7 +835,7 @@ None required
         # Register tools (Claude cannot use resources, only tools)
         self.mcp.tool(
             name="get_calendar_info",
-            description=f"""Get information about all configured calendar feeds (cached for {CacheTTL.CALENDAR_INFO//60} minutes).
+            description=f"""Get information about all configured calendar feeds (cached for {CacheTTL.CALENDAR_INFO // 60} minutes).
 
 ## Returns
 • Status of each feed
@@ -850,7 +850,7 @@ None required
 • Monitor feed event counts
 
 ## Caching
-• Feed information cached for {CacheTTL.CALENDAR_INFO//60} minutes
+• Feed information cached for {CacheTTL.CALENDAR_INFO // 60} minutes
 • Feed metadata doesn't change frequently""",
             title="Calendar Information",
             annotations={"title": "Calendar Information"},
@@ -858,7 +858,7 @@ None required
 
         self.mcp.tool(
             name="get_today_events",
-            description=f"""Get all calendar events happening today across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events happening today across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • List of today's events
@@ -876,7 +876,7 @@ None required
 • Use `get_calendar_conflicts` to find overlapping events
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Balances freshness with performance for calendar data""",
             title="Today's Events",
             annotations={"title": "Today's Events"},
@@ -884,7 +884,7 @@ None required
 
         self.mcp.tool(
             name="get_upcoming_events",
-            description=f"""Get the next 20 upcoming calendar events across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get the next 20 upcoming calendar events across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • Next 20 events sorted by start time
@@ -901,7 +901,7 @@ None required
 • Use `get_month_events` for current month view
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Recent events refreshed periodically""",
             title="Upcoming Events",
             annotations={"title": "Upcoming Events"},
@@ -910,7 +910,7 @@ None required
         # Parameterized queries as tools (Claude can only get static resources)
         self.mcp.tool(
             name="get_events_on_date",
-            description=f"""Get all calendar events on a specific date (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events on a specific date (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Parameters
 • date: Date in YYYY-MM-DD format (required)
@@ -926,7 +926,7 @@ All events for the specified date
 • Review past events
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Date-specific queries use cached event data""",
             title="Get Events on Date",
             annotations={"title": "Get Events on Date"},
@@ -934,7 +934,7 @@ All events for the specified date
 
         self.mcp.tool(
             name="get_events_between_dates",
-            description=f"""Get all calendar events between two dates (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events between two dates (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Parameters
 • start_date: Start date in YYYY-MM-DD format (required)
@@ -951,7 +951,7 @@ All events between the specified dates
 • Review activity for a period
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Range queries use cached event data""",
             title="Get Events Between Dates",
             annotations={"title": "Get Events Between Dates"},
@@ -959,7 +959,7 @@ All events between the specified dates
 
         self.mcp.tool(
             name="get_events_after_date",
-            description=f"""Get all calendar events after a specific date (next 30 days) (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events after a specific date (next 30 days) (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Parameters
 • date: Start date in YYYY-MM-DD format (required)
@@ -975,7 +975,7 @@ Events for the next 30 days after the specified date
 • Check upcoming availability
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Future event queries use cached data""",
             title="Get Events After Date",
             annotations={"title": "Get Events After Date"},
@@ -983,7 +983,7 @@ Events for the next 30 days after the specified date
 
         self.mcp.tool(
             name="search_calendar_events",
-            description=f"""Search for calendar events by text (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Search for calendar events by text (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Parameters
 • query: Search text (required)
@@ -1002,7 +1002,7 @@ Events matching the search query in:
 • Locate events with specific keywords
 
 ## Caching
-• Search results cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Search results cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Searches performed on cached event data""",
             title="Search Calendar Events",
             annotations={"title": "Search Calendar Events"},
@@ -1029,7 +1029,7 @@ Events matching the search query in:
         # Additional tools for common queries
         self.mcp.tool(
             name="get_week_events",
-            description=f"""Get all calendar events for the current week (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events for the current week (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • All events from Monday to Sunday
@@ -1046,7 +1046,7 @@ Events matching the search query in:
 • Use `get_month_events` for broader view
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Week view uses cached event data""",
             title="This Week's Events",
             annotations={"title": "This Week's Events"},
@@ -1054,7 +1054,7 @@ Events matching the search query in:
 
         self.mcp.tool(
             name="get_month_events",
-            description=f"""Get all calendar events for the current month (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events for the current month (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • All events for the current month
@@ -1071,7 +1071,7 @@ Events matching the search query in:
 • Use `get_events_between_dates` for custom ranges
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Month view uses cached event data""",
             title="This Month's Events",
             annotations={"title": "This Month's Events"},
@@ -1079,7 +1079,7 @@ Events matching the search query in:
 
         self.mcp.tool(
             name="get_tomorrow_events",
-            description=f"""Get all calendar events for tomorrow (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get all calendar events for tomorrow (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • Tomorrow's complete schedule
@@ -1096,7 +1096,7 @@ Events matching the search query in:
 • Use `get_events_on_date` for other specific dates
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Tomorrow's events from cached data""",
             title="Tomorrow's Events",
             annotations={"title": "Tomorrow's Events"},
@@ -1104,7 +1104,7 @@ Events matching the search query in:
 
         self.mcp.tool(
             name="get_calendar_conflicts",
-            description=f"""Get overlapping or conflicting events in the next 7 days (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Get overlapping or conflicting events in the next 7 days (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Returns
 • List of conflicting event pairs
@@ -1121,7 +1121,7 @@ Events matching the search query in:
 • Use `get_today_events` to check today's conflicts
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Conflict detection on cached events""",
             title="Calendar Conflicts",
             annotations={"title": "Calendar Conflicts"},
@@ -1129,7 +1129,7 @@ Events matching the search query in:
 
         self.mcp.tool(
             name="analyze_calendar_conflicts",
-            description=f"""Analyze calendar conflicts with severity levels and advanced filtering (cached for {CacheTTL.CALENDAR_EVENTS//60} minutes).
+            description=f"""Analyze calendar conflicts with severity levels and advanced filtering (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
 ## Parameters
 • days_ahead: Number of days to analyze (default: "7")
@@ -1164,7 +1164,7 @@ Events matching the search query in:
 • Use `search_calendar_events` to find specific events
 
 ## Caching
-• Event data cached for {CacheTTL.CALENDAR_EVENTS//60} minutes
+• Event data cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes
 • Advanced conflict analysis on cached events""",
             title="Analyze Calendar Conflicts",
             annotations={"title": "Analyze Calendar Conflicts"},
