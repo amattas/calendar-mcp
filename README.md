@@ -372,7 +372,7 @@ See [AGENTS.md](AGENTS.md) for detailed development documentation including:
 
 ## License
 
-This project is provided as-is for personal use.
+Released under the MIT License; see [LICENSE](LICENSE).
 
 ## Support
 
