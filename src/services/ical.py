@@ -4,13 +4,13 @@ import hashlib
 import logging
 from datetime import date, datetime, timedelta
 from threading import Lock, Timer
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
-import recurring_ical_events
+import recurring_ical_events  # type: ignore[import-untyped]
 import requests
 from dateutil import parser as date_parser
 from dateutil.tz import UTC
-from icalendar import Calendar, Event
+from icalendar import Calendar, Component
 
 from .cache import CacheConfig, CacheTTL, cache_aside
 
@@ -53,8 +53,8 @@ class MultiCalendarService:
         self,
         feed_configs: list[dict[str, str]],
         refresh_interval_minutes: int = 60,
-        mcp: Optional["FastMCP"] = None,
-        cache: Optional["RedisCache"] = None,
+        mcp: FastMCP | None = None,
+        cache: RedisCache | None = None,
     ):
         """
         Initialize the multi-calendar service
@@ -131,7 +131,7 @@ class MultiCalendarService:
                     "  • '7 days' for a week from now"
                 )
 
-    def _validate_feed_exists(self, feed_identifier: str) -> "CalendarFeed":
+    def _validate_feed_exists(self, feed_identifier: str) -> CalendarFeed:
         """Validate that a feed exists and return it"""
         feed = self._find_feed(feed_identifier)
         if not feed:
@@ -145,7 +145,7 @@ class MultiCalendarService:
             )
         return feed
 
-    def _schedule_refresh(self):
+    def _schedule_refresh(self) -> None:
         """Schedule the next automatic refresh"""
         if self._refresh_timer:
             self._refresh_timer.cancel()
@@ -154,7 +154,7 @@ class MultiCalendarService:
         self._refresh_timer.daemon = True
         self._refresh_timer.start()
 
-    def _auto_refresh(self):
+    def _auto_refresh(self) -> None:
         """Automatically refresh all calendars and reschedule"""
         try:
             self.refresh_all_calendars()
@@ -312,10 +312,10 @@ class MultiCalendarService:
                     ),
                 }
 
-    def _event_to_dict(self, event: Event, feed: CalendarFeed) -> dict[str, Any]:
+    def _event_to_dict(self, event: Component, feed: CalendarFeed) -> dict[str, Any]:
         """Convert an iCalendar event to a dictionary with feed information"""
 
-        def safe_str(value):
+        def safe_str(value: Any) -> str | None:
             if value is None:
                 return None
             if hasattr(value, "dt"):
@@ -386,7 +386,7 @@ class MultiCalendarService:
                     exc,
                 )
 
-        event_dict = {
+        event_dict: dict[str, Any] = {
             "uid": safe_str(event.get("UID")),
             "summary": safe_str(event.get("SUMMARY")),
             "description": safe_str(event.get("DESCRIPTION")),
@@ -426,7 +426,7 @@ class MultiCalendarService:
 
         return event_dict
 
-    def _normalize_datetime(self, dt) -> datetime | None:
+    def _normalize_datetime(self, dt: Any) -> datetime | None:
         """Normalize various date/datetime formats to UTC datetime"""
         if dt is None:
             return None
@@ -461,8 +461,8 @@ class MultiCalendarService:
     @cache_aside(CacheConfig(ttl=CacheTTL.CALENDAR_EVENTS, key_prefix="ical:events"))
     def get_events(
         self,
-        start_date: str | None = None,
-        end_date: str | None = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
         feed_identifiers: list[str] | None = None,
         limit: int | None = None,
         offset: int = 0,
@@ -487,23 +487,27 @@ class MultiCalendarService:
                 self._validate_feed_exists(identifier)
 
         # Parse date filters - use timezone-aware datetimes for recurring_ical_events
-        if start_date:
-            start_dt = self._normalize_datetime(start_date)
-        else:
-            start_dt = datetime.now(UTC)
+        start_dt = (
+            self._normalize_datetime(start_date) if start_date else datetime.now(UTC)
+        )
+        if start_dt is None:
+            raise ValueError(f"Invalid start_date: {start_date!r}")
 
-        if end_date:
-            end_dt = self._normalize_datetime(end_date)
-        else:
-            end_dt = start_dt + timedelta(days=7)
+        end_dt = (
+            self._normalize_datetime(end_date)
+            if end_date
+            else start_dt + timedelta(days=7)
+        )
+        if end_dt is None:
+            raise ValueError(f"Invalid end_date: {end_date!r}")
 
         # Determine which feeds to query
         feeds_to_query = []
         if feed_identifiers:
             for identifier in feed_identifiers:
-                feed = self._find_feed(identifier)
-                if feed:
-                    feeds_to_query.append(feed)
+                found = self._find_feed(identifier)
+                if found:
+                    feeds_to_query.append(found)
         else:
             feeds_to_query = list(self.feeds.values())
 
@@ -578,9 +582,9 @@ class MultiCalendarService:
         feeds_to_query = []
         if feed_identifiers:
             for identifier in feed_identifiers:
-                feed = self._find_feed(identifier)
-                if feed:
-                    feeds_to_query.append(feed)
+                found = self._find_feed(identifier)
+                if found:
+                    feeds_to_query.append(found)
         else:
             feeds_to_query = list(self.feeds.values())
 
@@ -638,9 +642,9 @@ class MultiCalendarService:
         feeds_to_query = []
         if feed_identifiers:
             for identifier in feed_identifiers:
-                feed = self._find_feed(identifier)
-                if feed:
-                    feeds_to_query.append(feed)
+                found = self._find_feed(identifier)
+                if found:
+                    feeds_to_query.append(found)
         else:
             feeds_to_query = list(self.feeds.values())
 
@@ -703,7 +707,11 @@ class MultiCalendarService:
     @cache_aside(CacheConfig(ttl=CacheTTL.CALENDAR_INFO, key_prefix="ical:info"))
     def get_calendar_info(self) -> dict[str, Any]:
         """Get information about all cached calendars"""
-        info = {"status": "loaded", "total_feeds": len(self.feeds), "feeds": []}
+        info: dict[str, Any] = {
+            "status": "loaded",
+            "total_feeds": len(self.feeds),
+            "feeds": [],
+        }
 
         with self._lock:
             for feed in self.feeds.values():
@@ -786,14 +794,17 @@ class MultiCalendarService:
 
         return feeds_list
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the automatic refresh timer"""
         if self._refresh_timer:
             self._refresh_timer.cancel()
             self._refresh_timer = None
 
-    def _register_mcp_tools(self):
+    def _register_mcp_tools(self) -> None:
         """Register MCP tools for this service"""
+        mcp = self.mcp
+        if mcp is None:
+            return
         # Register tool methods with MCP
         # NOTE: Getter tools commented out - use resources instead for read-only data
         # Resources provide: calendar-info, today-events, upcoming-events
@@ -805,7 +816,7 @@ class MultiCalendarService:
         #     annotations={"title": "Get Calendar Events"}
         # )(self.get_events_for_mcp)
 
-        self.mcp.tool(
+        mcp.tool(
             name="refresh_calendar_feeds",
             description="""Force refresh all calendar feeds to get the latest events.
 
@@ -833,7 +844,7 @@ None required
         # )(self.list_feeds_for_mcp)
 
         # Register tools (Claude cannot use resources, only tools)
-        self.mcp.tool(
+        mcp.tool(
             name="get_calendar_info",
             description=f"""Get information about all configured calendar feeds (cached for {CacheTTL.CALENDAR_INFO // 60} minutes).
 
@@ -856,7 +867,7 @@ None required
             annotations={"title": "Calendar Information"},
         )(self.get_calendar_info_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_today_events",
             description=f"""Get all calendar events happening today across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -882,7 +893,7 @@ None required
             annotations={"title": "Today's Events"},
         )(self.get_today_events_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_upcoming_events",
             description=f"""Get the next 20 upcoming calendar events across all configured feeds (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -908,7 +919,7 @@ None required
         )(self.get_upcoming_events_resource)
 
         # Parameterized queries as tools (Claude can only get static resources)
-        self.mcp.tool(
+        mcp.tool(
             name="get_events_on_date",
             description=f"""Get all calendar events on a specific date (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -932,7 +943,7 @@ All events for the specified date
             annotations={"title": "Get Events on Date"},
         )(self.get_events_on_date_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_events_between_dates",
             description=f"""Get all calendar events between two dates (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -957,7 +968,7 @@ All events between the specified dates
             annotations={"title": "Get Events Between Dates"},
         )(self.get_events_between_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_events_after_date",
             description=f"""Get all calendar events after a specific date (next 30 days) (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -981,7 +992,7 @@ Events for the next 30 days after the specified date
             annotations={"title": "Get Events After Date"},
         )(self.get_events_after_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="search_calendar_events",
             description=f"""Search for calendar events by text (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1009,7 +1020,7 @@ Events matching the search query in:
         )(self.search_events_resource)
 
         # Tools for constant values (for LLM discovery)
-        self.mcp.tool(
+        mcp.tool(
             name="get_calendar_feeds",
             description="""Get list of configured calendar feed names and URLs.
 
@@ -1027,7 +1038,7 @@ Events matching the search query in:
         )(self.get_feeds_list_resource)
 
         # Additional tools for common queries
-        self.mcp.tool(
+        mcp.tool(
             name="get_week_events",
             description=f"""Get all calendar events for the current week (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1052,7 +1063,7 @@ Events matching the search query in:
             annotations={"title": "This Week's Events"},
         )(self.get_week_events_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_month_events",
             description=f"""Get all calendar events for the current month (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1077,7 +1088,7 @@ Events matching the search query in:
             annotations={"title": "This Month's Events"},
         )(self.get_month_events_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_tomorrow_events",
             description=f"""Get all calendar events for tomorrow (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1102,7 +1113,7 @@ Events matching the search query in:
             annotations={"title": "Tomorrow's Events"},
         )(self.get_tomorrow_events_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="get_calendar_conflicts",
             description=f"""Get overlapping or conflicting events in the next 7 days (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1127,7 +1138,7 @@ Events matching the search query in:
             annotations={"title": "Calendar Conflicts"},
         )(self.get_conflicts_resource)
 
-        self.mcp.tool(
+        mcp.tool(
             name="analyze_calendar_conflicts",
             description=f"""Analyze calendar conflicts with severity levels and advanced filtering (cached for {CacheTTL.CALENDAR_EVENTS // 60} minutes).
 
@@ -1649,15 +1660,19 @@ Events matching the search query in:
         }
 
     def _analyze_event_overlap(
-        self, event1: dict, event2: dict, is_all_day1: bool, is_all_day2: bool
-    ) -> dict | None:
+        self,
+        event1: dict[str, Any],
+        event2: dict[str, Any],
+        is_all_day1: bool,
+        is_all_day2: bool,
+    ) -> dict[str, Any] | None:
         """Analyze overlap between two events and return conflict details"""
         start1 = self._normalize_datetime(event1.get("start"))
         end1 = self._normalize_datetime(event1.get("end"))
         start2 = self._normalize_datetime(event2.get("start"))
         end2 = self._normalize_datetime(event2.get("end"))
 
-        if not all([start1, end1, start2, end2]):
+        if start1 is None or end1 is None or start2 is None or end2 is None:
             return None
 
         # Check for overlap
@@ -1712,7 +1727,10 @@ Events matching the search query in:
         }
 
     def _determine_conflict_severity(
-        self, conflict_info: dict, event1: dict, event2: dict
+        self,
+        conflict_info: dict[str, Any],
+        event1: dict[str, Any],
+        event2: dict[str, Any],
     ) -> str:
         """Determine the severity level of a conflict"""
         overlap_minutes = conflict_info["overlap_minutes"]
@@ -1753,7 +1771,7 @@ Events matching the search query in:
         return conflict_level >= threshold_level
 
     def _generate_conflict_recommendations(
-        self, conflicts_by_severity: dict
+        self, conflicts_by_severity: dict[str, Any]
     ) -> list[str]:
         """Generate recommendations based on conflict analysis"""
         recommendations = []

@@ -67,18 +67,11 @@ MCP_API_KEY=test-key python server_remote.py
 ### Testing
 
 ```bash
-# Run all tests
-./run_tests.sh
+# Run all tests (coverage report + floor come from pyproject.toml)
+python -m pytest -q
 
 # Specific test file
 python -m pytest tests/test_ical.py -v
-
-# With coverage
-python -m pytest tests/ --cov=services --cov-report=term-missing
-
-# By marker
-pytest -m ical          # iCalendar tests
-pytest -m unit          # Unit tests
 ```
 
 ### Docker
@@ -283,7 +276,7 @@ calendar-mcp/
 ├── Dockerfile               # HTTP mode (optimized)
 ├── docker-compose.yml       # Docker compose config
 ├── .env.example             # Config template
-└── requirements.txt         # Dependencies
+└── pyproject.toml           # Metadata, dependencies, tool config
 ```
 
 ## Documentation

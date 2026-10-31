@@ -21,7 +21,7 @@ from .services.cache import RedisCache
 from .services.ical import MultiCalendarService
 
 # Load environment variables with correct precedence
-config: dict[str, str] = {}
+config: dict[str, str | None] = {}
 
 # Load from project directory if available
 for filename in (".env", ".env.local"):
@@ -37,8 +37,10 @@ for filename in (".env", ".env.local"):
         config.update(dotenv_values(path))
 
 # Apply loaded values without overriding existing environment vars
+# (dotenv_values maps a bare `KEY` line to None; skip those.)
 for key, value in config.items():
-    os.environ.setdefault(key, value)
+    if value is not None:
+        os.environ.setdefault(key, value)
 
 # Configure logging
 logging.basicConfig(
@@ -279,7 +281,11 @@ def get_current_datetime_tool() -> dict[str, Any]:
 )
 def get_server_status() -> dict[str, Any]:
     """Get the status of the calendar service"""
-    status = {"server": "CalendarMCP", "version": __version__, "services": {}}
+    status: dict[str, Any] = {
+        "server": "CalendarMCP",
+        "version": __version__,
+        "services": {},
+    }
 
     # Check iCalendar service
     ical_service = get_ical_service()
@@ -471,7 +477,7 @@ def reset_cache_stats() -> dict[str, Any]:
 
 
 # Initialize services on startup
-def initialize_services():
+def initialize_services() -> None:
     """Initialize all configured services"""
     logger.info("Initializing calendar service...")
 

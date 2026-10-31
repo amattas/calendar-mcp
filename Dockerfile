@@ -1,7 +1,7 @@
 # =============================================================================
 # Build stage: Compile dependencies and create wheels
 # =============================================================================
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 
@@ -10,15 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and build wheels
-COPY requirements.txt .
+# Build wheels for the project and its dependencies (declared in pyproject.toml)
+COPY pyproject.toml ./
+COPY src/ ./src/
 RUN pip install --upgrade pip && \
-    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+    pip wheel --no-cache-dir --wheel-dir /wheels .
 
 # =============================================================================
 # Runtime stage: Minimal image with only runtime dependencies
 # =============================================================================
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -32,17 +33,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy pre-built wheels from builder stage
 COPY --from=builder /wheels /wheels
 
-# Install Python dependencies from wheels (much faster than building)
+# Install the application and its dependencies from wheels (much faster than
+# building). The app installs as the `src` package with its metadata, so the
+# version comes from importlib.metadata; pip byte-compiles everything it installs.
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir --no-deps /wheels/*.whl && \
     rm -rf /wheels
-
-# Copy application code from src/
-COPY src/ ./src/
-COPY pyproject.toml ./
-
-# Precompile Python bytecode for faster startup
-RUN python -m compileall -q /app
 
 # Create a non-root user to run the app
 RUN useradd -m -u 1000 mcp && chown -R mcp:mcp /app

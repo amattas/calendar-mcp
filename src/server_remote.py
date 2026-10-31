@@ -35,7 +35,7 @@ _services_initialized = False
 _init_lock = asyncio.Lock()
 
 
-async def lazy_initialize_services():
+async def lazy_initialize_services() -> None:
     """
     Lazy initialization of services - called on first request instead of at startup.
     Runs the blocking calendar fetches in a thread so health probes stay responsive.
@@ -46,17 +46,16 @@ async def lazy_initialize_services():
         return
 
     async with _init_lock:
-        if _services_initialized:
-            return
+        # Re-check under the lock: another request may have initialized meanwhile.
+        if not _services_initialized:
+            logger.info("Lazy initializing services on first request...")
 
-        logger.info("Lazy initializing services on first request...")
+            from .server import initialize_services
 
-        from .server import initialize_services
+            await asyncio.get_running_loop().run_in_executor(None, initialize_services)
 
-        await asyncio.get_event_loop().run_in_executor(None, initialize_services)
-
-        _services_initialized = True
-        logger.info("Services initialized successfully")
+            _services_initialized = True
+            logger.info("Services initialized successfully")
 
 
 if api_key:
@@ -65,7 +64,10 @@ if api_key:
 
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import Response
-    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.middleware.base import (
+        BaseHTTPMiddleware,
+        RequestResponseEndpoint,
+    )
 
     from ._version import __version__
     from .server import mcp
@@ -112,7 +114,9 @@ if api_key:
 
     # Security middleware to add headers
     class SecurityMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
+        async def dispatch(
+            self, request: Request, call_next: RequestResponseEndpoint
+        ) -> Response:
             response = await call_next(request)
 
             # Add security headers
@@ -134,7 +138,9 @@ if api_key:
 
     # Middleware to lazy-initialize services on first real request
     class LazyInitMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next):
+        async def dispatch(
+            self, request: Request, call_next: RequestResponseEndpoint
+        ) -> Response:
             if request.url.path != "/app/health":
                 await lazy_initialize_services()
 
@@ -159,7 +165,7 @@ if api_key:
     # Ultra-lightweight health check endpoint - no service initialization
     # This endpoint MUST be fast to pass health checks during cold starts
     @app.get("/app/health")
-    async def health_check():
+    async def health_check() -> dict[str, object]:
         """
         Lightweight health check endpoint for container orchestrators.
         Does NOT trigger service initialization to keep cold starts fast.
@@ -176,7 +182,7 @@ if api_key:
 
     # Add a custom 404 handler with anti-brute-force delay
     @app.exception_handler(404)
-    async def not_found_handler(request: Request, exc: HTTPException):
+    async def not_found_handler(request: Request, exc: HTTPException) -> Response:
         # Add 30-second delay for failed authentication attempts to prevent brute forcing
         # Only delay for /app/ paths that look like authentication attempts
         if request.url.path.startswith("/app/") and request.url.path != "/app/health":
