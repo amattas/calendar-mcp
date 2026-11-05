@@ -22,7 +22,7 @@ dependencies = [
     "urllib3>=2.8.0",
     "requests>=2.34.2", # CVE in extract_zipped_paths
     # Utilities
-    "python-dateutil>=3.0.0",
+    "python-dateutil>=2.8.0",
     "python-dotenv>=1.2.4",
     # Caching (hiredis: optional C parser)
     "redis>=8.1.0",
