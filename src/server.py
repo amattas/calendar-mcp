@@ -376,6 +376,10 @@ def get_cache_stats() -> dict[str, Any]:
 • pattern: Glob matched against cache keys: `*` matches any run of characters,
   `?` one character (e.g., "ical:*", "ical:events:*"). If not provided, clears ALL entries.
 
+## Returns
+• connected: False while the cache backs off after a database error (nothing was
+  cleared; keys_deleted is 0)
+
 ## Use Cases
 • Clear stale data
 • Force refresh of cached calendar data
@@ -398,13 +402,26 @@ def clear_cache(pattern: str | None = None) -> dict[str, Any]:
     if pattern:
         # Clear by pattern
         deleted = cache.delete_pattern(pattern)
-        return {"status": "success", "pattern": pattern, "keys_deleted": deleted}
+        return {
+            "status": "success",
+            "pattern": pattern,
+            "keys_deleted": deleted,
+            "connected": cache.is_connected(),
+        }
     else:
         # Clear all cache
         if cache.flush_all():
-            return {"status": "success", "message": "All cache cleared"}
+            return {
+                "status": "success",
+                "message": "All cache cleared",
+                "connected": cache.is_connected(),
+            }
         else:
-            return {"status": "error", "message": "Failed to clear cache"}
+            return {
+                "status": "error",
+                "message": "Failed to clear cache",
+                "connected": cache.is_connected(),
+            }
 
 
 @mcp.tool(

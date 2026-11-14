@@ -4,6 +4,7 @@ The postgres parameter runs only when TEST_DATABASE_URL points at a scratch
 database (see README.md, "Running the tests").
 """
 
+import logging
 import os
 import time
 from collections.abc import Callable, Iterator
@@ -227,6 +228,8 @@ def test_postgres_backoff() -> None:
     # While backing off, ops short-circuit without touching the pool.
     assert cache.get("k") is None
     assert cache.set("k", "v") is False
+    assert cache.flush_all() is False
+    assert cache.delete_pattern("*") == 0
     assert pool.attempts == 1
     clock.advance(30)
     assert cache.is_connected()
@@ -305,11 +308,17 @@ def test_clear_cache_tool_by_pattern(server_cache: Any) -> None:
     for key in ("ical:events:v1:today", "ical:info:v1", "other"):
         cache.set(key, 1, ttl=60)
     result = server_cache.clear_cache("ical:*")
-    assert result == {"status": "success", "pattern": "ical:*", "keys_deleted": 2}
+    assert result == {
+        "status": "success",
+        "pattern": "ical:*",
+        "keys_deleted": 2,
+        "connected": True,
+    }
     assert cache.get("other") == 1
     assert server_cache.clear_cache() == {
         "status": "success",
         "message": "All cache cleared",
+        "connected": True,
     }
     assert cache.get("other") is None
 
@@ -336,6 +345,11 @@ def test_get_cache_info_tool_hides_credentials(
     assert info["backend"] == "postgres"
     assert info["database"] == database
     assert "s3cret" not in repr(info)
+    assert server_cache.clear_cache() == {
+        "status": "error",
+        "message": "Failed to clear cache",
+        "connected": False,
+    }
     assert set(info) == {
         "connected",
         "backend",
@@ -344,3 +358,37 @@ def test_get_cache_info_tool_hides_credentials(
         "entries",
         "table_bytes",
     }
+
+
+@pytest.mark.parametrize(
+    "url", ["postgres://u:PW@[::1/db", "postgresql://u:PW%zz@127.0.0.1:1/db"]
+)
+def test_malformed_database_url_never_logs_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, url: str
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    monkeypatch.delenv("CACHE_BACKEND", raising=False)
+    monkeypatch.setenv("DATABASE_URL", url)
+    cache = Cache.from_env()
+    assert cache is not None
+    assert not cache.is_connected()
+    assert cache.get("ical:events:v1:today", default="d") == "d"
+    assert cache.set("ical:events:v1:today", "v") is False
+    cache.close()
+    assert not [r for r in caplog.records if "PW" in r.getMessage()]
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert "DATABASE_URL is not a valid libpq connection string" in errors[0]
+
+
+def test_pool_connect_errors_are_not_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    cache = Cache(PostgresBackend("postgresql://u:PW@127.0.0.1:1/db"))
+    # Waits out the 2 s pool timeout.
+    assert cache.get("ical:info:v1", default="d") == "d"
+    cache.close()
+    pool_records = [r for r in caplog.records if r.name == "psycopg.pool"]
+    assert not [
+        r for r in pool_records if r.getMessage().startswith("error connecting")
+    ]
+    assert len([r for r in caplog.records if r.name == "src.services.cache"]) == 1
