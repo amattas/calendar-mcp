@@ -17,7 +17,7 @@ from .cache import CacheConfig, CacheTTL, cache_aside
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-    from .cache import RedisCache
+    from .cache import Cache
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class MultiCalendarService:
         feed_configs: list[dict[str, str]],
         refresh_interval_minutes: int = 60,
         mcp: FastMCP | None = None,
-        cache: RedisCache | None = None,
+        cache: Cache | None = None,
     ):
         """
         Initialize the multi-calendar service

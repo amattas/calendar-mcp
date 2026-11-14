@@ -7,7 +7,7 @@ High-level categories include:
 - **Calendar queries** – Get events for today, upcoming events, and date/range-based queries
 - **Service status** – Inspect server and calendar service status
 - **Configuration** – View non-sensitive configuration values
-- **Cache management** – Inspect and manage Redis cache statistics and contents
+- **Cache management** – Inspect and manage the optional PostgreSQL (or in-memory) cache
 
 Refer to:
 
@@ -17,7 +17,9 @@ Refer to:
   - `get_server_config`
   - `get_cache_stats`
   - `clear_cache`
-  - `get_cache_info`
+  - `get_cache_info` – returns `connected`, `backend` (`postgres` or `memory`), `database`
+    (PostgreSQL host and database name, never credentials), `server_version`, `entries` and
+    `table_bytes`
   - `reset_cache_stats`
 - `src/services/ical.py` for calendar-specific operations implemented by `MultiCalendarService`
 

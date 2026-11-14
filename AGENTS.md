@@ -4,12 +4,12 @@ This document provides technical details for AI agents and assistants working wi
 
 ## Project Overview
 
-This is a **Model Context Protocol (MCP) server** for calendar management. The server integrates iCalendar feed management with optional Redis caching.
+This is a **Model Context Protocol (MCP) server** for calendar management. The server integrates iCalendar feed management with optional PostgreSQL-backed caching.
 
 ### Core Services
 
 - **iCalendar** (`services/ical.py`): Multi-calendar feed management with recurring event support
-- **Cache** (`services/cache.py`): Redis caching layer with cache-aside pattern
+- **Cache** (`services/cache.py`): Cache facade over a PostgreSQL or in-memory backend, with cache-aside pattern
 
 ### Deployment
 
@@ -40,11 +40,13 @@ class MultiCalendarService:
 
 **Cache Service** (`services/cache.py`):
 ```python
-class RedisCache:
-    - Cache-aside pattern
+class Cache:
+    - Cache-aside pattern (@cache_aside)
     - Configurable TTLs per operation type
-    - Connection pooling
-    - Error handling with fallback
+    - Backends: PostgresBackend (DATABASE_URL) or MemoryBackend (CACHE_BACKEND=memory)
+    - Cache.from_env() never connects; the PostgreSQL pool opens on first use
+    - Never raises: backend errors are logged (rate limited), counted, and become misses;
+      after a database error the cache backs off for 30 s (is_connected() does no I/O)
     - Statistics tracking
 ```
 
@@ -100,11 +102,10 @@ def get_events_today() -> Dict[str, Any]:
 - `HOST`: Bind address (default: `0.0.0.0`)
 - `PORT`: Listen port (default: `80`)
 
-### Redis Cache
+### Cache
 
-- `REDIS_HOST`: Redis hostname
-- `REDIS_SSL_PORT`: Redis SSL port (default: `6380`)
-- `REDIS_KEY`: Redis access key
+- `DATABASE_URL`: PostgreSQL URL; the `cache_entries` table is created on first use (never logged)
+- `CACHE_BACKEND`: `memory` for a process-local cache (takes precedence over `DATABASE_URL`)
 - `CACHE_TTL_*`: Override default TTLs
 
 ## Development Commands
@@ -162,10 +163,6 @@ def mock_ical_feeds():
     # Mocked HTTP responses for calendar feeds
 
 @pytest.fixture
-def mock_redis():
-    # Mocked Redis client
-
-@pytest.fixture
 def temp_calendar_service(mock_ical_feeds):
     # Temporary service instance for testing
 ```
@@ -176,6 +173,14 @@ def temp_calendar_service(mock_ical_feeds):
 pytestmark = pytest.mark.ical  # Mark entire file
 @pytest.mark.unit             # Unit test
 ```
+
+### Cache Tests
+
+`tests/test_cache.py` runs every behavioural test through the parameterized `harness` fixture:
+
+- `memory`: `Cache(MemoryBackend(clock=FakeClock()))`, so TTL tests advance a fake clock;
+- `postgres`: runs only when `TEST_DATABASE_URL` points at a scratch database (the tests
+  delete every cache entry in it); skipped otherwise. See README "Running the tests".
 
 All tests avoid making real HTTP requests or requiring live API tokens.
 
@@ -223,13 +228,12 @@ When `MCP_API_KEY` is set:
 
 ### Caching Strategy
 
-Redis cache uses cache-aside pattern with configurable TTLs:
+The cache uses the cache-aside pattern with configurable TTLs:
 
 ```python
 # Default TTLs
-CACHE_TTL_CALENDAR_EVENTS = 900   # 15 min
-CACHE_TTL_CALENDAR_INFO = 1800     # 30 min
-CACHE_TTL_CALENDAR_FEED = 600      # 10 min
+CACHE_TTL_CALENDAR_EVENTS = 900   # 15 min (ical:events, ical:search)
+CACHE_TTL_CALENDAR_INFO = 1800     # 30 min (ical:info)
 ```
 
 **Cache Keys:**
@@ -302,9 +306,9 @@ In addition to service-specific tools, these are always available:
 - `get_server_status`: Service health and status
 - `get_server_config`: Configuration values (non-sensitive)
 
-**Cache Management** (if Redis configured):
+**Cache Management** (if a cache is configured):
 - `get_cache_stats`: Cache performance metrics
-- `get_cache_info`: Redis server information
+- `get_cache_info`: `connected`, `backend`, `database` (host and name only), `server_version`, `entries`, `table_bytes`
 - `clear_cache`: Clear cache entries by pattern
 - `reset_cache_stats`: Reset cache statistics
 
@@ -408,7 +412,7 @@ Key libraries:
 - **fastmcp**: FastMCP framework for building MCP servers
 - **icalendar**: iCalendar parsing
 - **recurring-ical-events**: RRULE expansion for recurring events
-- **redis**: Optional caching layer
+- **psycopg** (with `psycopg_pool`): Optional PostgreSQL cache
 - **fastapi** / **uvicorn**: HTTP server (server_remote.py only)
 - **python-dotenv**: Environment variable management
 
@@ -416,7 +420,7 @@ Key libraries:
 
 1. **Calendar Refresh**: Runs in background thread, doesn't block requests
 2. **Cache Usage**: Reduces redundant parsing and HTTP requests
-3. **Connection Pooling**: Redis uses connection pool
+3. **Connection Pooling**: The PostgreSQL cache uses a small pool (1-3 connections, 2 s checkout, 3 s connect and statement timeouts)
 4. **Event Filtering**: Filter events early to reduce memory usage
 5. **Lazy Loading**: Services initialized only when needed
 
@@ -461,13 +465,13 @@ for component in cal.walk():
         print(component.get('summary'))
 ```
 
-### Verify Redis Connection
+### Verify the Cache Connection
 
 ```python
-from services.cache import RedisCache
-cache = RedisCache(host="your-host", port=6380, password="key")
-if cache.is_connected():
-    print("Connected!")
+from src.services.cache import Cache
+cache = Cache.from_env()  # reads DATABASE_URL; does not connect yet
+cache.set("probe", "ok", ttl=60)
+print(cache.get("probe"), cache.info())  # errors count in cache.get_stats().errors
 ```
 
 ## Common Development Workflows
@@ -503,7 +507,7 @@ calendar-mcp/
 ├── services/
 │   ├── __init__.py
 │   ├── ical.py              # Calendar service
-│   └── cache.py             # Redis cache service
+│   └── cache.py             # Cache service (PostgreSQL / memory)
 ├── tests/
 │   ├── conftest.py          # Pytest fixtures
 │   ├── test_ical.py         # Calendar tests
@@ -523,7 +527,7 @@ calendar-mcp/
 - **iCalendar RFC 5545**: https://tools.ietf.org/html/rfc5545
 - **RRULE Spec**: https://icalendar.org/iCalendar-RFC-5545/3-8-5-3-recurrence-rule.html
 - **MCP Protocol**: Model Context Protocol specification
-- **Redis Commands**: https://redis.io/commands
+- **psycopg 3**: https://www.psycopg.org/psycopg3/docs/
 
 ## Questions or Issues?
 

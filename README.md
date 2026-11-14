@@ -14,7 +14,7 @@ A Model Context Protocol (MCP) server for iCalendar feed management and event qu
 - **Dynamic Feed Management**: Add/remove calendar feeds on the fly
 - **Automatic Refresh**: Configurable refresh intervals for feed updates
 - **Timezone Support**: Proper timezone normalization and handling
-- **Redis Caching**: Optional caching for improved performance
+- **Caching**: Optional PostgreSQL-backed (or in-memory) response cache
 - **HTTP API**: Remote access via HTTP with dual-factor authentication
 
 ## Quick Start
@@ -57,10 +57,10 @@ python scripts/verify_auth.py --api-key YOUR_KEY --domain localhost:8080 --no-ht
 - `HOST` - Bind address (default: `0.0.0.0`)
 - `PORT` - Listen port (default: `80`)
 
-**Redis Cache (Optional):**
-- `REDIS_HOST` - Redis hostname
-- `REDIS_SSL_PORT` - Redis SSL port (default: `6380`)
-- `REDIS_KEY` - Redis access key
+**Cache (Optional):**
+- `DATABASE_URL` - PostgreSQL URL for the response cache (e.g. `postgresql://user:pw@host:5432/calendar_mcp?sslmode=require`). Unset: no cache
+- `CACHE_BACKEND` - Set to `memory` for a process-local cache (local development); takes precedence over `DATABASE_URL`
+- `CACHE_TTL_<NAME>` - Override a cache TTL in seconds (`CALENDAR_EVENTS`, default `900`; `CALENDAR_INFO`, default `1800`); see `docs/configuration.md`
 
 ### Calendar Feed Format
 
@@ -192,9 +192,9 @@ print(f"https://domain.com/app/{api_key}/{api_key_hash}/mcp")
 - `get_server_status` - Check server health
 - `get_server_config` - View server configuration
 
-### Cache Management (if Redis configured)
+### Cache Management (if a cache is configured)
 - `get_cache_stats` - View cache performance metrics
-- `get_cache_info` - View Redis server information
+- `get_cache_info` - View cache backend, database and size
 - `clear_cache` - Clear cached data
 - `reset_cache_stats` - Reset cache statistics
 
@@ -280,6 +280,22 @@ python scripts/verify_auth.py --api-key "$NEW_KEY" --md5-salt "$NEW_SALT" --doma
 
 ## Testing
 
+### Running the tests
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+The PostgreSQL cache tests run only when `TEST_DATABASE_URL` points at a scratch database
+(the tests delete every cache entry in it):
+
+```bash
+docker run -d --rm --name pgtest -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:18
+TEST_DATABASE_URL=postgresql://postgres:pw@localhost:55432/postgres pytest -q
+docker stop pgtest
+```
+
 ### Test with Claude Desktop
 
 > "What's the status of my calendar server?"
@@ -349,7 +365,7 @@ Calendar Service (services/ical.py)
      ├─ Recurring Events (recurring-ical-events)
      └─ Auto-Refresh Timer
           ↓
-     Optional Redis Cache (services/cache.py)
+     Optional Cache (services/cache.py: PostgreSQL or in-memory)
           ↓
 iCalendar Feed URLs
 ```
@@ -358,7 +374,7 @@ iCalendar Feed URLs
 
 - **Automatic Caching**: Parsed events cached to reduce processing
 - **Background Refresh**: Feeds refresh without blocking
-- **Redis Support**: Optional Redis for multi-instance deployments
+- **Shared Cache**: Optional PostgreSQL cache shared by every replica; cache errors never fail a request (30 s backoff, then retry)
 - **Efficient Parsing**: Only parses when feeds change
 
 ## Development

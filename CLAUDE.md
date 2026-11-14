@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Model Context Protocol (MCP) server** for calendar management. The server provides iCalendar feed management with recurring event support and optional Redis caching.
+This is a **Model Context Protocol (MCP) server** for calendar management. The server provides iCalendar feed management with recurring event support and optional PostgreSQL-backed caching.
 
 **Core Service:**
 - **iCalendar**: Fetches and parses .ics calendar feeds (Google Calendar, Outlook, etc.)
@@ -25,13 +25,13 @@ This is a **Model Context Protocol (MCP) server** for calendar management. The s
 
 ### Service Layer (`services/`)
 - `services/ical.py` - Multi-calendar feed management with recurring event support
-- `services/cache.py` - Redis caching layer with cache-aside pattern
+- `services/cache.py` - Cache facade (PostgreSQL or in-memory backend) with cache-aside pattern
 
 ### Key Design Patterns
 - Services initialized lazily via `get_ical_service()`
 - Configuration changes trigger service reinitialization (server.py:64-68)
 - Tools registered via `@mcp.tool()` decorator
-- Optional Redis caching with `@cache_aside` decorator
+- Optional caching with `@cache_aside` decorator (cache errors never fail a request)
 
 ## Environment Configuration
 
@@ -50,8 +50,9 @@ The server loads from `.env` and `.env.local` (`.env.local` takes precedence).
 - `HOST` - Bind address (default: "0.0.0.0")
 - `PORT` - Listen port (default: 80)
 
-**Redis Cache:**
-- `REDIS_HOST` / `REDIS_SSL_PORT` / `REDIS_KEY` - Optional caching
+**Cache (optional):**
+- `DATABASE_URL` - PostgreSQL URL; the `cache_entries` table is created on first use
+- `CACHE_BACKEND=memory` - Process-local cache for local development (takes precedence)
 
 **Important:** `ICAL_FEED_CONFIGS` must be valid JSON.
 
@@ -84,7 +85,7 @@ docker-compose up --build
 
 Tests use pytest with extensive mocking via `conftest.py`. Key fixtures:
 - `mock_ical_feeds` - Mocked HTTP responses for calendar feeds
-- `mock_redis` - Mocked Redis client
+- `harness` (`tests/test_cache.py`) - Cache on a `MemoryBackend` with a fake clock, plus a `postgres` param that runs only when `TEST_DATABASE_URL` points at a scratch database (see README "Running the tests")
 - `temp_calendar_service` - Temporary service instance
 
 All tests avoid real HTTP requests or live API tokens.
@@ -120,10 +121,9 @@ When `MCP_API_KEY` is set:
 
 ### Caching Strategy
 
-Redis cache-aside pattern with TTLs:
-- Calendar events: 900s (15 min)
-- Calendar info: 1800s (30 min)
-- Calendar feed: 600s (10 min)
+Cache-aside pattern (`ical:events`, `ical:search`, `ical:info` key prefixes) with TTLs:
+- Calendar events and search: 900s (15 min, `CACHE_TTL_CALENDAR_EVENTS`)
+- Calendar info: 1800s (30 min, `CACHE_TTL_CALENDAR_INFO`)
 
 Cache keys: `{service}:{operation}:{identifier}`
 
@@ -153,9 +153,9 @@ Always available:
 - `get_server_status` - Service health and status
 - `get_server_config` - Configuration (non-sensitive)
 
-If Redis configured:
+If a cache is configured:
 - `get_cache_stats` - Cache performance metrics
-- `get_cache_info` - Redis server info
+- `get_cache_info` - Backend, database host/name, server version, entries, table size
 - `clear_cache` - Clear cache by pattern
 - `reset_cache_stats` - Reset statistics
 
@@ -182,7 +182,7 @@ If Redis configured:
 - **fastmcp** - MCP server framework
 - **icalendar** - iCalendar parsing
 - **recurring-ical-events** - RRULE expansion
-- **redis** - Optional caching
+- **psycopg** (with `psycopg_pool`) - Optional PostgreSQL cache
 - **fastapi** / **uvicorn** - HTTP server (server_remote.py)
 - **python-dotenv** - Environment management
 
@@ -267,7 +267,7 @@ calendar-mcp/
 ├── server_remote.py          # HTTP entry
 ├── services/
 │   ├── ical.py              # Calendar service
-│   └── cache.py             # Redis cache
+│   └── cache.py             # Cache (PostgreSQL / memory)
 ├── tests/
 │   ├── conftest.py          # Fixtures
 │   └── test_ical.py         # Tests

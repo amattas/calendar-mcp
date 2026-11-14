@@ -15,7 +15,7 @@ from dotenv import dotenv_values
 from fastmcp import FastMCP
 
 from ._version import __version__
-from .services.cache import RedisCache
+from .services.cache import Cache, describe_database_url
 
 # Import our service modules
 from .services.ical import MultiCalendarService
@@ -57,7 +57,8 @@ mcp = FastMCP(name="CalendarMCP", version=__version__)
 # Service instances (will be initialized on first use)
 _ical_service: MultiCalendarService | None = None
 _ical_service_config: str | None = None  # Track the config used to create the service
-_cache_service: RedisCache | None = None
+_cache_service: Cache | None = None
+_cache_initialized = False
 
 
 def get_ical_service() -> MultiCalendarService | None:
@@ -184,21 +185,21 @@ def get_ical_service() -> MultiCalendarService | None:
     return _ical_service
 
 
-def get_cache_service() -> RedisCache | None:
-    """Get or initialize the Redis cache service"""
-    global _cache_service
+def get_cache_service() -> Cache | None:
+    """Get or initialize the cache service (None when no cache is configured)"""
+    global _cache_service, _cache_initialized
 
-    if _cache_service is None:
+    if _cache_service is None and not _cache_initialized:
+        _cache_initialized = True
         try:
-            _cache_service = RedisCache.from_env()
-            if _cache_service and _cache_service.is_connected():
-                logger.info("Redis cache service initialized successfully")
-            else:
-                _cache_service = None
-                logger.warning("Redis cache service not available")
+            _cache_service = Cache.from_env()
         except Exception as e:
-            logger.error(f"Failed to initialize Redis cache: {e}")
+            logger.error(f"Failed to initialize cache: {type(e).__name__}")
             _cache_service = None
+        if _cache_service is None:
+            logger.info("Cache disabled (set DATABASE_URL or CACHE_BACKEND=memory)")
+        else:
+            logger.info("Cache enabled")
 
     return _cache_service
 
@@ -337,23 +338,23 @@ def get_server_config() -> dict[str, Any]:
 
 @mcp.tool(
     name="get_cache_stats",
-    description="""Get Redis cache statistics and performance metrics.
+    description="""Get cache statistics and performance metrics for this server process.
 
 ## Returns
 • Hit/miss rates
 • Average response times
-• Error counts
+• Error counts (cache errors never fail a request; they count as misses)
 • Total requests
 • Uptime
 
 ## Use Cases
 • Monitor cache performance
 • Debug caching issues
-• Optimize cache configuration
+• Tune CACHE_TTL_* settings
 
 ## Related Tools
 • Use `clear_cache` to clear cache entries
-• Use `get_cache_info` for Redis server info""",
+• Use `get_cache_info` for cache backend and storage details""",
     title="Cache Statistics",
     annotations={"title": "Cache Statistics"},
 )
@@ -369,19 +370,20 @@ def get_cache_stats() -> dict[str, Any]:
 
 @mcp.tool(
     name="clear_cache",
-    description="""Clear cache entries by pattern or all cache data.
+    description="""Clear cache entries by key pattern, or all cached data.
 
 ## Parameters
-• pattern: Pattern to match keys (e.g., "ical:*"). If not provided, clears ALL cache.
+• pattern: Glob matched against cache keys: `*` matches any run of characters,
+  `?` one character (e.g., "ical:*", "ical:events:*"). If not provided, clears ALL entries.
 
 ## Use Cases
 • Clear stale data
-• Force refresh of cached data
+• Force refresh of cached calendar data
 • Debug caching issues
 
 ## Related Tools
 • Use `get_cache_stats` to view cache metrics
-• Use `get_cache_info` for Redis server info
+• Use `get_cache_info` for cache backend and storage details
 
 ⚠️ **Warning**: Clearing all cache may impact performance temporarily""",
     title="Clear Cache",
@@ -407,19 +409,20 @@ def clear_cache(pattern: str | None = None) -> dict[str, Any]:
 
 @mcp.tool(
     name="get_cache_info",
-    description="""Get Redis server information and cache configuration.
+    description="""Get cache backend health and storage information.
 
 ## Returns
-• Redis version
-• Memory usage
-• Connected clients
-• Keyspace info
-• Configuration details
+• connected: False while the cache backs off after a database error
+• backend: "postgres" or "memory"
+• database: PostgreSQL host and database name (no credentials)
+• server_version: PostgreSQL version string
+• entries: Number of stored entries (including expired ones not yet swept)
+• table_bytes: Size of the cache table on disk
 
 ## Use Cases
 • Monitor cache health
-• Check Redis server status
-• View cache configuration
+• Check which database the cache uses
+• Check cache size
 
 ## Related Tools
 • Use `get_cache_stats` for performance metrics
@@ -428,27 +431,25 @@ def clear_cache(pattern: str | None = None) -> dict[str, Any]:
     annotations={"title": "Cache Information"},
 )
 def get_cache_info() -> dict[str, Any]:
-    """Get Redis server information"""
+    """Get cache backend information"""
     cache = get_cache_service()
     if not cache:
         return {"error": "Cache service not available"}
 
     info = cache.info()
-
-    # Extract key information
+    database_url = os.getenv("DATABASE_URL")
+    database = (
+        describe_database_url(database_url)
+        if info.get("backend") == "postgres" and database_url
+        else None
+    )
     return {
         "connected": cache.is_connected(),
-        "host": cache.host,
-        "port": cache.port,
-        "ssl_enabled": cache.use_ssl,
-        "server": {
-            "redis_version": info.get("redis_version", "unknown"),
-            "uptime_seconds": info.get("uptime_in_seconds", 0),
-            "connected_clients": info.get("connected_clients", 0),
-            "used_memory_human": info.get("used_memory_human", "unknown"),
-            "used_memory_peak_human": info.get("used_memory_peak_human", "unknown"),
-        },
-        "keyspace": {db: stats for db, stats in info.items() if db.startswith("db")},
+        "backend": info.get("backend"),
+        "database": database,
+        "server_version": info.get("server_version"),
+        "entries": info.get("entries"),
+        "table_bytes": info.get("table_bytes"),
     }
 
 
