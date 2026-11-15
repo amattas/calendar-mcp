@@ -43,12 +43,36 @@ where `API_KEY_HASH` is calculated as:
 - `MD5(MD5_SALT + API_KEY)` when `MD5_SALT` is set, or
 - `MD5(API_KEY)` in legacy mode.
 
-## Redis Cache (Optional)
+## Cache (Optional)
 
-If you enable Redis caching via `RedisCache`:
+- `DATABASE_URL` – PostgreSQL URL for the response cache
+- `CACHE_BACKEND` – `memory` for a process-local cache (local development)
 
-- `REDIS_HOST` – Redis hostname
-- `REDIS_SSL_PORT` – Redis SSL port (default: `6380`)
-- `REDIS_KEY` – Redis access key
+The cache is optional. `CACHE_BACKEND=memory` selects a process-local cache; otherwise a set
+`DATABASE_URL` selects PostgreSQL; with neither, every request parses the calendar feeds directly.
 
-When configured, the calendar service will use Redis for caching parsed events and other data to improve performance.
+```env
+DATABASE_URL=postgresql://user:password@host:5432/calendar_mcp?sslmode=require&application_name=calendar-mcp
+```
+
+The PostgreSQL backend:
+
+- connects lazily on first use (startup never waits for the database);
+- creates its table, `cache_entries` (an `UNLOGGED` table: a database crash may empty it), on first
+  connect. The database user needs `CREATE` on schema `public`; if it lacks it, the server logs a
+  warning naming the fix (`GRANT ALL ON SCHEMA public TO <user>`, run as `postgres`);
+- never fails a request: after any database error it logs (at most once a minute per operation),
+  serves misses and reads the calendar feeds directly for 30 seconds, then retries.
+
+`clear_cache` takes a glob: `*` matches any run of characters and `?` one character; character
+classes (`[abc]`) are not supported. `get_cache_info` reports the database host and name, never
+credentials.
+
+### Cache TTLs
+
+Override with `CACHE_TTL_<NAME>` (seconds):
+
+| Name              | Default | Data                                                  |
+|-------------------|---------|-------------------------------------------------------|
+| `CALENDAR_EVENTS` | `900`   | Event queries and search results (`ical:events:*`, `ical:search:*`) |
+| `CALENDAR_INFO`   | `1800`  | Calendar feed information (`ical:info:*`)             |

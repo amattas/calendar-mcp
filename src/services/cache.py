@@ -1,20 +1,37 @@
-"""Redis caching layer for MattasMCP services"""
+"""Cache layer for Calendar MCP services.
+
+`Cache` is the facade the app uses. It serializes values as JSON, keeps
+hit/miss statistics, and never raises into the request path: backend errors are
+logged (rate limited), counted in `CacheStats.errors`, and turned into misses.
+
+Backends:
+- `PostgresBackend`: a table in the service's own PostgreSQL database
+  (`DATABASE_URL`). Connects lazily, backs off for 30 s after any database
+  error, and creates its table on first use.
+- `MemoryBackend`: a process-local dict for local development and tests
+  (`CACHE_BACKEND=memory`).
+"""
 
 import hashlib
 import json
 import logging
 import os
+import re
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
-import redis
-from redis import ConnectionPool, Redis, RedisError
-from redis.connection import SSLConnection
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 logger = logging.getLogger(__name__)
+
+APPLICATION_NAME = "calendar-mcp"
 
 
 @dataclass
@@ -97,318 +114,448 @@ class CacheConfig:
         return self.ttl
 
 
-class RedisCache:
-    """Redis cache manager with SSL support and connection pooling"""
+def glob_to_like(glob: str) -> str:
+    """Translate a cache-key glob into a SQL LIKE pattern (used with ESCAPE '\\').
 
-    def __init__(
-        self,
-        host: str | None = None,
-        port: int | None = None,
-        password: str | None = None,
-        use_ssl: bool = True,
-        ssl_cert_reqs: str = "required",
-        max_connections: int = 50,
-        connection_timeout: int = 5,
-        socket_timeout: int = 5,
-        retry_on_timeout: bool = True,
-        health_check_interval: int = 30,
-    ):
-        """
-        Initialize Redis cache manager
+    `*` matches any run of characters and `?` any single character; every other
+    character is literal, so `%`, `_` and `\\` in the glob are escaped.
+    Character classes (`[abc]`) are not supported and match literally.
+    """
+    out: list[str] = []
+    for ch in glob:
+        if ch == "*":
+            out.append("%")
+        elif ch == "?":
+            out.append("_")
+        elif ch in ("\\", "%", "_"):
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
 
-        Args:
-            host: Redis host (defaults to REDIS_HOST env var)
-            port: Redis port (defaults to REDIS_SSL_PORT env var)
-            password: Redis password (defaults to REDIS_KEY env var)
-            use_ssl: Whether to use SSL connection
-            ssl_cert_reqs: SSL certificate requirements
-            max_connections: Maximum number of connections in pool
-            connection_timeout: Connection timeout in seconds
-            socket_timeout: Socket timeout in seconds
-            retry_on_timeout: Whether to retry on timeout
-            health_check_interval: Health check interval in seconds
-        """
-        self.host = host or os.getenv("REDIS_HOST")
-        self.port = port or int(os.getenv("REDIS_SSL_PORT", "6380"))
-        self.password = password or os.getenv("REDIS_KEY")
-        self.use_ssl = use_ssl
 
-        if not self.host:
-            raise ValueError("Redis host is required (set REDIS_HOST env var)")
+def _glob_to_regex(glob: str) -> re.Pattern[str]:
+    """Same matching rules as `glob_to_like`, for the memory backend."""
+    parts = [".*" if ch == "*" else "." if ch == "?" else re.escape(ch) for ch in glob]
+    return re.compile("".join(parts), re.DOTALL)
 
-        # Create connection pool with SSL support
-        pool_kwargs: dict[str, Any] = {
-            "host": self.host,
-            "port": self.port,
-            "password": self.password,
-            "max_connections": max_connections,
-            "connection_class": SSLConnection if use_ssl else redis.Connection,
-            "socket_connect_timeout": connection_timeout,
-            "socket_timeout": socket_timeout,
-            "retry_on_timeout": retry_on_timeout,
-            "health_check_interval": health_check_interval,
-        }
 
-        if use_ssl:
-            pool_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
-            pool_kwargs["ssl_ca_certs"] = os.getenv("REDIS_CA_FILE")
+def describe_database_url(url: str) -> dict[str, str]:
+    """Return only the host and database name of a libpq URL (never credentials)."""
+    try:
+        params = conninfo_to_dict(url)
+    except psycopg.Error:
+        # The parser's message can echo the URL, password included: drop it.
+        return {"host": "", "dbname": ""}
+    return {
+        "host": str(params.get("host", "")),
+        "dbname": str(params.get("dbname", "")),
+    }
 
-        self.pool = ConnectionPool(**pool_kwargs)
-        self.client: Redis | None = None
-        self.stats = CacheStats()
-        self._connected = False
 
-        # Try to establish connection
-        self._connect()
+class CacheBackend(Protocol):
+    """Storage behind `Cache`. Values are already-serialized JSON text."""
 
-    def _connect(self) -> bool:
-        """Establish connection to Redis"""
-        try:
-            self.client = Redis(connection_pool=self.pool)
-            # Test connection
-            self.client.ping()
-            self._connected = True
-            logger.info(
-                f"Connected to Redis at {self.host}:{self.port} (SSL: {self.use_ssl})"
-            )
-            return True
-        except (RedisError, Exception) as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            self._connected = False
-            return False
+    name: str
 
-    @classmethod
-    def from_env(cls) -> RedisCache | None:
-        """Create RedisCache from environment variables"""
-        try:
-            return cls()
-        except (ValueError, RedisError) as e:
-            logger.warning(f"Redis cache not available: {e}")
-            return None
+    def is_connected(self) -> bool: ...
+    def get(self, key: str) -> str | None: ...
+    def set(self, key: str, value: str, ttl: int | None) -> None: ...
+    def delete(self, key: str) -> bool: ...
+    def delete_pattern(self, glob: str) -> int: ...
+    def flush(self) -> int: ...
+    def info(self) -> dict[str, Any]: ...
+    def close(self) -> None: ...
+
+
+class MemoryBackend:
+    """Process-local backend for local development and tests."""
+
+    name = "memory"
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._data: dict[str, tuple[str, float | None]] = {}
+        self._lock = threading.Lock()
+
+    def _live(self, entry: tuple[str, float | None], now: float) -> bool:
+        return entry[1] is None or entry[1] > now
 
     def is_connected(self) -> bool:
-        """Check if Redis is connected and responsive"""
-        if not self._connected or not self.client:
-            return False
+        return True
 
+    def get(self, key: str) -> str | None:
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                return None
+            if not self._live(entry, self._clock()):
+                del self._data[key]
+                return None
+            return entry[0]
+
+    def set(self, key: str, value: str, ttl: int | None) -> None:
+        expires = None if ttl is None else self._clock() + ttl
+        with self._lock:
+            self._data[key] = (value, expires)
+
+    def delete(self, key: str) -> bool:
+        with self._lock:
+            return self._data.pop(key, None) is not None
+
+    def delete_pattern(self, glob: str) -> int:
+        regex = _glob_to_regex(glob)
+        with self._lock:
+            doomed = [k for k in self._data if regex.fullmatch(k)]
+            for key in doomed:
+                del self._data[key]
+            return len(doomed)
+
+    def flush(self) -> int:
+        with self._lock:
+            count = len(self._data)
+            self._data.clear()
+            return count
+
+    def info(self) -> dict[str, Any]:
+        with self._lock:
+            now = self._clock()
+            expired = sum(1 for e in self._data.values() if not self._live(e, now))
+            return {
+                "server_version": None,
+                "entries": len(self._data),
+                "expired_pending": expired,
+                "table_bytes": None,
+            }
+
+    def close(self) -> None:
+        pass
+
+
+# The ics-combiner copy of this module uses a logged table ("TABLE"); this
+# cache only holds data the calendar feeds can serve again, so a crash may lose it.
+_TABLE_KIND = "UNLOGGED TABLE"
+_SCHEMA_LOCK_ID = 727001
+_BACKOFF_SECONDS = 30.0
+_SWEEP_EVERY = 50
+
+_SQL_LOCK = "SELECT pg_advisory_xact_lock(%s)"
+_SQL_CREATE_TABLE = (
+    f"CREATE {_TABLE_KIND} IF NOT EXISTS cache_entries "
+    "(key text PRIMARY KEY, value text NOT NULL, expires_at timestamptz)"
+)
+_SQL_CREATE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS cache_entries_expires_idx "
+    "ON cache_entries (expires_at) WHERE expires_at IS NOT NULL"
+)
+_SQL_GET = (
+    "SELECT value FROM cache_entries "
+    "WHERE key = %s AND (expires_at IS NULL OR expires_at > now())"
+)
+_SQL_SET = (
+    "INSERT INTO cache_entries (key, value, expires_at) "
+    "VALUES (%s, %s, now() + %s::double precision * interval '1 second') "
+    "ON CONFLICT (key) DO UPDATE "
+    "SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at"
+)
+_SQL_DELETE = "DELETE FROM cache_entries WHERE key = %s"
+_SQL_DELETE_LIKE = "DELETE FROM cache_entries WHERE key LIKE %s ESCAPE '\\'"
+_SQL_FLUSH = "DELETE FROM cache_entries"
+_SQL_SWEEP = (
+    "DELETE FROM cache_entries WHERE key IN (SELECT key FROM cache_entries "
+    "WHERE expires_at IS NOT NULL AND expires_at <= now() LIMIT 500)"
+)
+_SQL_INFO = (
+    "SELECT version(), (SELECT count(*) FROM cache_entries), "
+    "(SELECT count(*) FROM cache_entries "
+    "WHERE expires_at IS NOT NULL AND expires_at <= now()), "
+    "pg_total_relation_size('cache_entries')"
+)
+
+
+class _DropPoolConnectErrors(logging.Filter):
+    """Drop psycopg_pool's per-attempt "error connecting" warnings.
+
+    The pool retries in the background about once a second during an outage,
+    and libpq's message can echo parts of the URL. `Cache` already logs the
+    outage, rate limited, without the URL.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith("error connecting")
+
+
+logging.getLogger("psycopg.pool").addFilter(_DropPoolConnectErrors())
+
+
+class PostgresBackend:
+    """Cache table in PostgreSQL via a small sync connection pool.
+
+    Constructing it does no I/O. The pool opens on the first operation, the
+    table is created once per process after the first successful connect, and
+    any database error starts a 30 s backoff during which every operation is a
+    miss and `is_connected()` is False (it never does I/O itself).
+    """
+
+    name = "postgres"
+
+    def __init__(
+        self, conninfo: str, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._opened = False
+        self._schema_ready = False
+        self._down_until = 0.0
+        self._sets = 0
+        self._pool: ConnectionPool | None = None
         try:
-            self.client.ping()
-            return True
-        except Exception:
-            self._connected = False
-            return False
+            conninfo_to_dict(conninfo)
+        except psycopg.Error as e:
+            # Never log str(e): libpq echoes the URL, password included.
+            logger.error(
+                "DATABASE_URL is not a valid libpq connection string (%s); "
+                "cache disabled",
+                type(e).__name__,
+            )
+            return
+        self._pool = ConnectionPool(
+            conninfo,
+            min_size=1,
+            max_size=3,
+            timeout=2,
+            open=False,
+            kwargs={
+                "connect_timeout": 3,
+                "options": "-c statement_timeout=3000",
+                "autocommit": True,
+                "application_name": APPLICATION_NAME,
+            },
+            check=ConnectionPool.check_connection,
+        )
 
-    def _live_client(self) -> Redis | None:
-        """Return the client when Redis is connected and responsive, else None"""
+    def is_connected(self) -> bool:
+        """False when unconfigured (invalid URL) or backing off; no I/O."""
+        return self._pool is not None and self._clock() >= self._down_until
+
+    @contextmanager
+    def _connection(self) -> Iterator[psycopg.Connection[Any]]:
+        pool = self._pool
+        if pool is None:
+            raise RuntimeError("cache database is not configured")
+        try:
+            with self._lock:
+                if not self._opened:
+                    pool.open(wait=False)
+                    self._opened = True
+            with pool.connection() as conn:
+                if not self._schema_ready:
+                    self._ensure_schema(conn)
+                yield conn
+        except psycopg.Error, PoolTimeout:
+            self._down_until = self._clock() + _BACKOFF_SECONDS
+            raise
+
+    def _ensure_schema(self, conn: psycopg.Connection[Any]) -> None:
+        with self._lock:
+            if self._schema_ready:
+                return
+            try:
+                with conn.transaction():
+                    conn.execute(_SQL_LOCK, (_SCHEMA_LOCK_ID,))
+                    conn.execute(_SQL_CREATE_TABLE)
+                    conn.execute(_SQL_CREATE_INDEX)
+            except psycopg.errors.InsufficientPrivilege:
+                logger.warning(
+                    "Cache table cannot be created: role %r lacks CREATE on schema "
+                    "public. Fix as postgres: GRANT ALL ON SCHEMA public TO %s",
+                    conn.info.user,
+                    conn.info.user,
+                )
+                raise
+            self._schema_ready = True
+
+    def get(self, key: str) -> str | None:
         if not self.is_connected():
             return None
-        return self.client
+        with self._connection() as conn:
+            row = conn.execute(_SQL_GET, (key,)).fetchone()
+        return None if row is None else str(row[0])
 
-    def _generate_key(self, key: str, prefix: str = "", version: str = "v1") -> str:
-        """Generate cache key with prefix and version"""
-        parts = []
-        if prefix:
-            parts.append(prefix)
-        if version:
-            parts.append(version)
-        parts.append(key)
-        return ":".join(parts)
+    def set(self, key: str, value: str, ttl: int | None) -> None:
+        if not self.is_connected():
+            return
+        with self._connection() as conn:
+            conn.execute(_SQL_SET, (key, value, ttl))
+            self._sets += 1
+            if self._sets % _SWEEP_EVERY == 0:
+                conn.execute(_SQL_SWEEP)
 
-    def _serialize(self, value: Any) -> bytes:
-        """Serialize value for storage"""
-        if value is None:
-            return b""
-        return json.dumps(value, default=str).encode("utf-8")
+    def delete(self, key: str) -> bool:
+        if not self.is_connected():
+            return False
+        with self._connection() as conn:
+            return conn.execute(_SQL_DELETE, (key,)).rowcount > 0
 
-    def _deserialize(self, data: bytes | str) -> Any:
-        """Deserialize value from storage"""
-        if not data:
-            return None
-        return json.loads(data)
+    def delete_pattern(self, glob: str) -> int:
+        if not self.is_connected():
+            return 0
+        with self._connection() as conn:
+            return conn.execute(_SQL_DELETE_LIKE, (glob_to_like(glob),)).rowcount
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def flush(self) -> int:
+        if not self.is_connected():
+            return 0
+        with self._connection() as conn:
+            return conn.execute(_SQL_FLUSH).rowcount
+
+    def info(self) -> dict[str, Any]:
+        if not self.is_connected():
+            return {}
+        with self._connection() as conn:
+            row = conn.execute(_SQL_INFO).fetchone()
+        if row is None:
+            return {}
+        version, entries, expired, size = row
+        return {
+            "server_version": version,
+            "entries": entries,
+            "expired_pending": expired,
+            "table_bytes": size,
+        }
+
+    def close(self) -> None:
+        with self._lock:
+            if self._opened and self._pool is not None:
+                self._pool.close()
+                self._opened = False
+
+
+_ERROR_LOG_INTERVAL = 60.0
+
+
+class Cache:
+    """Cache facade: JSON values, statistics, and a never-raise error contract."""
+
+    def __init__(self, backend: CacheBackend) -> None:
+        self._backend = backend
+        self.stats = CacheStats()
+        self._last_error_log: dict[str, float] = {}
+
+    @classmethod
+    def from_env(cls) -> Cache | None:
+        """`CACHE_BACKEND=memory`, else `DATABASE_URL`, else no cache.
+
+        Does not connect: the PostgreSQL pool opens on first use.
         """
-        Get value from cache
+        if os.getenv("CACHE_BACKEND", "").strip().lower() == "memory":
+            return cls(MemoryBackend())
+        url = os.getenv("DATABASE_URL")
+        if url:
+            return cls(PostgresBackend(url))
+        return None
 
-        Args:
-            key: Cache key
-            default: Default value if key not found
+    def _failed(self, method: str, exc: Exception) -> None:
+        self.stats.errors += 1
+        now = time.monotonic()
+        last = self._last_error_log.get(method)
+        if last is None or now - last >= _ERROR_LOG_INTERVAL:
+            self._last_error_log[method] = now
+            logger.error(
+                "Cache %s failed (%s backend): %s: %s",
+                method,
+                self._backend.name,
+                type(exc).__name__,
+                exc,
+            )
 
-        Returns:
-            Cached value or default
-        """
-        client = self._live_client()
-        if client is None:
-            self.stats.errors += 1
-            return default
-
-        self.stats.total_requests += 1
-        start_time = time.time()
-
+    def is_connected(self) -> bool:
+        """True unless the backend is backing off after an error (no I/O)."""
         try:
-            data = client.get(key)
-            elapsed = time.time() - start_time
-
-            if data is not None:
-                self.stats.hits += 1
-                self.stats.hit_time_sum += elapsed
-                return self._deserialize(data)
-            else:
-                self.stats.misses += 1
-                self.stats.miss_time_sum += elapsed
-                return default
-
-        except (RedisError, Exception) as e:
-            logger.error(f"Cache get error for key {key}: {e}")
-            self.stats.errors += 1
-            return default
-
-    def set(
-        self,
-        key: str,
-        value: Any,
-        ttl: int | None = None,
-        nx: bool = False,
-        xx: bool = False,
-    ) -> bool:
-        """
-        Set value in cache
-
-        Args:
-            key: Cache key
-            value: Value to cache
-            ttl: Time to live in seconds
-            nx: Only set if key doesn't exist
-            xx: Only set if key exists
-
-        Returns:
-            True if successful, False otherwise
-        """
-        client = self._live_client()
-        if client is None:
+            return self._backend.is_connected()
+        except Exception as e:
+            self._failed("is_connected", e)
             return False
 
+    def get(self, key: str, default: Any = None) -> Any:
+        start = time.perf_counter()
         try:
-            serialized = self._serialize(value)
-            result = client.set(key, serialized, ex=ttl, nx=nx, xx=xx)
-            return bool(result)
+            data = self._backend.get(key)
+            value = default if data is None else json.loads(data)
+        except Exception as e:
+            self._failed("get", e)
+            return default
+        elapsed = time.perf_counter() - start
+        self.stats.total_requests += 1
+        if data is None:
+            self.stats.misses += 1
+            self.stats.miss_time_sum += elapsed
+        else:
+            self.stats.hits += 1
+            self.stats.hit_time_sum += elapsed
+        return value
 
-        except (RedisError, Exception) as e:
-            logger.error(f"Cache set error for key {key}: {e}")
-            self.stats.errors += 1
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
+        """Store `value` for `ttl` seconds (None: no expiry; <= 0: delete, False)."""
+        try:
+            if ttl is not None and ttl <= 0:
+                self._backend.delete(key)
+                return False
+            if not self._backend.is_connected():
+                return False
+            self._backend.set(key, json.dumps(value), ttl)
+            return True
+        except Exception as e:
+            self._failed("set", e)
             return False
 
     def delete(self, key: str) -> bool:
-        """Delete key from cache"""
-        client = self._live_client()
-        if client is None:
-            return False
-
         try:
-            result = client.delete(key)
-            return bool(result)
-        except (RedisError, Exception) as e:
-            logger.error(f"Cache delete error for key {key}: {e}")
+            return self._backend.delete(key)
+        except Exception as e:
+            self._failed("delete", e)
             return False
 
     def delete_pattern(self, pattern: str) -> int:
-        """
-        Delete all keys matching pattern
-
-        Args:
-            pattern: Redis key pattern (e.g., "calendar:events:*")
-
-        Returns:
-            Number of keys deleted
-        """
-        client = self._live_client()
-        if client is None:
+        """Delete keys matching a glob (`*`, `?`; no character classes)."""
+        try:
+            if not self._backend.is_connected():
+                return 0
+            return self._backend.delete_pattern(pattern)
+        except Exception as e:
+            self._failed("delete_pattern", e)
             return 0
-
-        try:
-            # Use SCAN to avoid blocking on large keyspaces
-            deleted = 0
-            for key in client.scan_iter(match=pattern, count=100):
-                if client.delete(key):
-                    deleted += 1
-            return deleted
-
-        except (RedisError, Exception) as e:
-            logger.error(f"Cache delete pattern error for {pattern}: {e}")
-            return 0
-
-    def exists(self, key: str) -> bool:
-        """Check if key exists in cache"""
-        client = self._live_client()
-        if client is None:
-            return False
-
-        try:
-            return bool(client.exists(key))
-        except Exception:
-            return False
-
-    def expire(self, key: str, ttl: int) -> bool:
-        """Set expiration time for key"""
-        client = self._live_client()
-        if client is None:
-            return False
-
-        try:
-            return bool(client.expire(key, ttl))
-        except Exception:
-            return False
-
-    def ttl(self, key: str) -> int:
-        """Get remaining TTL for key in seconds"""
-        client = self._live_client()
-        if client is None:
-            return -2  # Key doesn't exist
-
-        try:
-            return int(client.ttl(key))
-        except Exception:
-            return -2
 
     def flush_all(self) -> bool:
-        """Flush all keys (use with caution!)"""
-        client = self._live_client()
-        if client is None:
+        """Delete every cache entry."""
+        try:
+            if not self._backend.is_connected():
+                return False
+            self._backend.flush()
+            return True
+        except Exception as e:
+            self._failed("flush_all", e)
             return False
 
+    def info(self) -> dict[str, Any]:
+        """Backend name plus server_version, entries, expired_pending, table_bytes."""
         try:
-            client.flushall()
-            return True
-        except (RedisError, Exception) as e:
-            logger.error(f"Cache flush error: {e}")
-            return False
+            return {"backend": self._backend.name, **self._backend.info()}
+        except Exception as e:
+            self._failed("info", e)
+            return {"backend": self._backend.name}
 
     def get_stats(self) -> CacheStats:
-        """Get cache statistics"""
         return self.stats
 
     def reset_stats(self) -> None:
-        """Reset cache statistics"""
         self.stats.reset()
 
-    def info(self) -> dict[str, Any]:
-        """Get Redis server info"""
-        client = self._live_client()
-        if client is None:
-            return {}
-
-        try:
-            return dict(client.info())
-        except Exception:
-            return {}
-
     def close(self) -> None:
-        """Close Redis connection"""
-        if self.client:
-            self.client.close()
-        if self.pool:
-            self.pool.disconnect()
-        self._connected = False
+        try:
+            self._backend.close()
+        except Exception as e:
+            self._failed("close", e)
 
 
 def cache_key_generator(
@@ -418,7 +565,7 @@ def cache_key_generator(
     Generate cache key from function arguments
 
     Args:
-        prefix: Key prefix (e.g., "calendar:events")
+        prefix: Key prefix (e.g., "ical:events")
         version: Cache version
         *args: Positional arguments
         **kwargs: Keyword arguments
@@ -451,7 +598,7 @@ def cache_key_generator(
 
 def cache_aside[**P, T](
     config: CacheConfig | None = None,
-    cache_instance: RedisCache | None = None,
+    cache_instance: Cache | None = None,
     key_func: Callable[..., str] | None = None,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
@@ -459,11 +606,11 @@ def cache_aside[**P, T](
 
     Args:
         config: Cache configuration
-        cache_instance: Redis cache instance to use
+        cache_instance: Cache instance to use
         key_func: Custom key generation function
 
     Example:
-        @cache_aside(CacheConfig(ttl=60, key_prefix="calendar:events"))
+        @cache_aside(CacheConfig(ttl=60, key_prefix="ical:events"))
         def get_events(calendar_id: str):
             # Expensive API call
             return api.get_events(calendar_id)
@@ -530,7 +677,7 @@ def cache_aside[**P, T](
 
 
 def _invalidate_cache(
-    cache_instance: RedisCache | None,
+    cache_instance: Cache | None,
     config: CacheConfig,
     key_func: Callable[..., str] | None,
     func: Callable[..., Any],
@@ -589,10 +736,8 @@ class CacheTTL:
     Environment Variables:
         CACHE_TTL_CALENDAR_EVENTS: Calendar events cache (default: 900 seconds)
         CACHE_TTL_CALENDAR_INFO: Calendar info cache (default: 1800 seconds)
-        CACHE_TTL_CALENDAR_FEED: Calendar feed cache (default: 600 seconds)
     """
 
     # Calendar
     CALENDAR_EVENTS = _get_cache_ttl("CALENDAR_EVENTS", 900)  # 15 minutes default
     CALENDAR_INFO = _get_cache_ttl("CALENDAR_INFO", 1800)  # 30 minutes default
-    CALENDAR_FEED = _get_cache_ttl("CALENDAR_FEED", 600)  # 10 minutes default
